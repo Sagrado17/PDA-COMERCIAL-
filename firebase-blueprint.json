@@ -1,0 +1,173 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "A product available in the store",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Product name" },
+        "description": { "type": "string", "description": "Product description" },
+        "price": { "type": "number", "description": "Base price" },
+        "images": { "type": "array", "items": { "type": "string" }, "description": "URLs of product images" },
+        "attributes": { 
+          "type": "object", 
+          "description": "Available attributes like colors and sizes",
+          "properties": {
+            "colors": { "type": "array", "items": { "type": "string" } },
+            "sizes": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "category": { "type": "string" },
+        "isFeatured": { "type": "boolean", "description": "Whether the product is highlighted in a carousel" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "rating": { "type": "number", "description": "Average rating" },
+        "ratingCount": { "type": "number", "description": "Number of ratings" }
+      },
+      "required": ["name", "price"]
+    },
+    "Rating": {
+      "title": "Rating",
+      "description": "A product rating from a customer",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "value": { "type": "number", "description": "Rating value 1-5" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "value"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "A product comment from a customer",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "userName": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "userName", "text"]
+    },
+    "Stock": {
+      "title": "Stock",
+      "description": "Inventory levels for a specific product variation",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "variation": { 
+          "type": "object", 
+          "properties": {
+            "color": { "type": "string" },
+            "size": { "type": "string" }
+          }
+        },
+        "quantity": { "type": "number", "description": "Current stock level" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "quantity"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "A completed or pending sale",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string" },
+        "items": { 
+          "type": "array", 
+          "items": {
+            "type": "object",
+            "properties": {
+              "productId": { "type": "string" },
+              "variation": { "type": "object" },
+              "quantity": { "type": "number" },
+              "price": { "type": "number" }
+            }
+          }
+        },
+        "totalAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["paid", "pending", "cancelled"] },
+        "type": { "type": "string", "enum": ["sale", "reservation"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["totalAmount", "status"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "totalDebt": { "type": "number", "default": 0 }
+      },
+      "required": ["name"]
+    },
+    "Debt": {
+      "title": "Debt",
+      "description": "Record of a specific debt",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string" },
+        "saleId": { "type": "string" },
+        "amount": { "type": "number" },
+        "remainingAmount": { "type": "number" },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["active", "paid"] }
+      },
+      "required": ["customerId", "amount"]
+    },
+    "SiteSettings": {
+      "title": "Site Settings",
+      "description": "Global configuration for the store's appearance and identity",
+      "type": "object",
+      "properties": {
+        "logoUrl": { "type": "string", "description": "URL of the store logo" },
+        "storeName": { "type": "string", "description": "Name of the store" },
+        "storeDescription": { "type": "string", "description": "Short description of the store" },
+        "primaryColor": { "type": "string", "description": "Primary hex color for the theme" },
+        "accentColor": { "type": "string", "description": "Accent hex color for the theme" },
+        "borderRadius": { "type": "string", "description": "Border radius for UI elements (e.g. 12px, 24px)" },
+        "fontFamily": { "type": "string", "description": "Font family for the store" },
+        "whatsappNumber": { "type": "string", "description": "WhatsApp number for notifications (e.g. 244900000000)" },
+        "emailForNotifications": { "type": "string", "description": "Email address for notifications" }
+      }
+    },
+    "Stats": {
+      "title": "Statistics",
+      "description": "Global store statistics",
+      "type": "object",
+      "properties": {
+        "visitorCount": { "type": "number", "description": "Total number of unique visitors" }
+      }
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "Discount coupon for promotions",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "The coupon code users enter" },
+        "type": { "type": "string", "enum": ["percentage", "fixed"], "description": "Type of discount" },
+        "value": { "type": "number", "description": "Value of the discount (percentage or fixed amount)" },
+        "active": { "type": "boolean", "description": "Whether the coupon can be used" },
+        "usageCount": { "type": "number", "description": "How many times this coupon has been used" },
+        "productId": { "type": "string", "description": "Optional specific product ID this coupon applies to" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "type", "value", "active"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": { "schema": "Product", "description": "Store products" },
+    "/stock/{stockId}": { "schema": "Stock", "description": "Inventory levels" },
+    "/sales/{saleId}": { "schema": "Sale", "description": "Sales and reservations" },
+    "/customers/{customerId}": { "schema": "Customer", "description": "Customer records" },
+    "/debts/{debtId}": { "schema": "Debt", "description": "Debt tracking" },
+    "/ratings/{ratingId}": { "schema": "Rating", "description": "Product ratings" },
+    "/comments/{commentId}": { "schema": "Comment", "description": "Product comments" },
+    "/settings/{settingId}": { "schema": "SiteSettings", "description": "Global site settings" },
+    "/stats/{statsId}": { "schema": "Stats", "description": "Global store statistics" },
+    "/coupons/{couponId}": { "schema": "Coupon", "description": "Discount coupons" }
+  }
+}

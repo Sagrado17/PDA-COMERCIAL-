@@ -1,0 +1,6 @@
+{
+  "name": "PDA COMERCIAL",
+  "description": "PDA COMERCIAL - Diversos para o seu dia-a-dia. Loja de produtos diversos com gestão de estoque e vendas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
