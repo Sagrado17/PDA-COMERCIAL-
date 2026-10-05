@@ -2244,10 +2244,10 @@ const ProductModal = React.memo(({
                       image: (product.colorImages && product.colorImages[selectedColor]) || product.images[0]
                     });
                     setIsJustAdded(true);
-                    setTimeout(() => setIsJustAdded(false), 1200);
+                    setTimeout(() => setIsJustAdded(false), 1400);
                   }}
                 >
-                  {isJustAdded ? '✓ Adicionado' : '🛒 Adicionar'}
+                  {isJustAdded ? '✓ Adicionado ao Carrinho' : '🛒 Adicionar ao Carrinho'}
                 </button>
 
                 <button

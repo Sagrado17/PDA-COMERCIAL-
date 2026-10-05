@@ -723,12 +723,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         <div className="flex items-center justify-between mb-12">
           <div className="flex items-center gap-2">
             {settings.logoUrl ? (
-              <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg border border-zinc-100">
+              <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm border border-zinc-200 bg-white p-0.5">
                 <SafeImage src={settings.logoUrl} className="w-full h-full object-contain bg-white" />
               </div>
             ) : (
-              <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-orange-600/20">
-                <ShoppingCart className="text-white w-6 h-6" />
+              <div className="w-10 h-10 bg-white border border-zinc-200 rounded-xl flex items-center justify-center shadow-sm p-0.5">
+                <PdaLogo className="w-full h-full object-contain" />
               </div>
             )}
             <div className="flex flex-col">

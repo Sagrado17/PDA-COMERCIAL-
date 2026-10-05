@@ -19,6 +19,9 @@ export const PdaLogo: React.FC<{ className?: string }> = ({ className = "w-full 
         </style>
       </defs>
 
+      {/* FUNDO BRANCO (ORIGINAL PDA COMERCIAL) */}
+      <rect width="100%" height="100%" fill="#ffffff" rx="160" />
+
       {/* ÓRBITA SUPERIOR */}
       <path d="M205 205 C300 80 505 65 650 185" className="linha-azul" />
       <path d="M650 185 C690 220 715 255 730 290" className="linha-azul" />
