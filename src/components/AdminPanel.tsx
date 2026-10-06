@@ -722,15 +722,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       )}>
         <div className="flex items-center justify-between mb-12">
           <div className="flex items-center gap-2">
-            {settings.logoUrl ? (
-              <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm border border-zinc-200 bg-white p-0.5">
-                <SafeImage src={settings.logoUrl} className="w-full h-full object-contain bg-white" />
-              </div>
-            ) : (
-              <div className="w-10 h-10 bg-white border border-zinc-200 rounded-xl flex items-center justify-center shadow-sm p-0.5">
-                <PdaLogo className="w-full h-full object-contain" />
-              </div>
-            )}
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm border border-zinc-200 bg-white p-0.5">
+              <SafeImage 
+                src={(settings.logoUrl && settings.logoUrl !== '/pda-logo.svg') ? settings.logoUrl : '/icon-512.png'} 
+                className="w-full h-full object-contain bg-white" 
+                alt="PDA Comercial"
+              />
+            </div>
             <div className="flex flex-col">
               <span className="font-display text-lg font-bold tracking-tight uppercase text-zinc-900 leading-tight">
                 {settings.storeName.split(' ').map((word, i) => (
@@ -2194,31 +2192,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest block">URL do Logotipo</label>
                             <button
                               type="button"
-                              onClick={() => setSettingsForm({ ...settingsForm, logoUrl: '/pda-logo.svg' })}
+                              onClick={() => setSettingsForm({ ...settingsForm, logoUrl: '/icon-512.png' })}
                               className="text-xs font-bold text-[#ff6900] hover:text-[#ff8500] flex items-center gap-1 cursor-pointer bg-orange-50 px-2.5 py-1 rounded-lg border border-orange-200 transition-all hover:scale-105 active:scale-95"
-                              title="Usar o logótipo oficial vetorizado PDA Comercial"
+                              title="Usar o logótipo oficial de alta resolução PDA Comercial"
                             >
-                              <span>✨ Inserir Logótipo PDA (SVG)</span>
+                              <span>✨ Inserir Logótipo Oficial (/icon-512.png)</span>
                             </button>
                           </div>
                           <input 
                             type="text" 
-                            placeholder="/pda-logo.svg"
-                            value={settingsForm.logoUrl ?? '/pda-logo.svg'}
+                            placeholder="/icon-512.png"
+                            value={settingsForm.logoUrl ?? '/icon-512.png'}
                             onChange={e => setSettingsForm({...settingsForm, logoUrl: e.target.value})}
                             className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-6 py-4 focus:outline-none focus:border-orange-500 transition-all font-mono text-xs"
                           />
-                          <p className="text-[10px] text-zinc-400 mt-2">Logótipo oficial vetorizado da PDA Comercial (inclui camisa, calças, ténis, carrinho e órbitas).</p>
+                          <p className="text-[10px] text-zinc-400 mt-2">Logótipo oficial de alta resolução da PDA Comercial.</p>
                         </div>
 
                         <div className="pt-4">
                           <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4 block">Prévia do Logotipo</label>
                           <div className="w-32 h-32 rounded-2xl border-2 border-dashed border-zinc-200 flex items-center justify-center overflow-hidden bg-white p-2 shadow-sm">
-                            {settingsForm.logoUrl === '/pda-logo.svg' || !settingsForm.logoUrl ? (
-                              <PdaLogo className="w-full h-full object-contain" />
-                            ) : (
-                              <SafeImage src={settingsForm.logoUrl} className="w-full h-full object-contain p-1" />
-                            )}
+                            <SafeImage 
+                              src={(settingsForm.logoUrl && settingsForm.logoUrl !== '/pda-logo.svg') ? settingsForm.logoUrl : '/icon-512.png'} 
+                              className="w-full h-full object-contain p-1" 
+                            />
                           </div>
                         </div>
                       </div>

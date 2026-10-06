@@ -3486,7 +3486,7 @@ export default function App() {
   // Settings State
   const [settings, setSettings] = useState<SiteSettings>({
     id: 'site',
-    logoUrl: '/pda-logo.svg',
+    logoUrl: '/icon-512.png',
     storeName: 'PDA COMERCIAL',
     storeDescription: 'Diversos para o seu dia-a-dia',
     primaryColor: '#ff6900', // orange-600 PDA
@@ -3657,7 +3657,7 @@ export default function App() {
           ...data,
           id: docSnap.id,
           priceColor: data.priceColor || '#ff6900',
-          logoUrl: data.logoUrl || '/pda-logo.svg',
+          logoUrl: (data.logoUrl && data.logoUrl !== '/pda-logo.svg') ? data.logoUrl : '/icon-512.png',
           headerColor: data.headerColor || '#062b5c'
         }));
       }
@@ -4115,12 +4115,12 @@ export default function App() {
                     }}
                     className="logo flex items-center gap-2 cursor-pointer group"
                   >
-                    <div className="logo-icon w-7.5 h-7.5 sm:w-8.5 sm:h-8.5 bg-white rounded-[9px] flex items-center justify-center text-[#ff6900] shadow-md group-hover:scale-105 transition-transform shrink-0 overflow-hidden p-0.5">
-                      {settings.logoUrl && settings.logoUrl !== '/pda-logo.svg' ? (
-                        <SafeImage src={settings.logoUrl} className="w-full h-full object-contain" />
-                      ) : (
-                        <PdaLogo className="w-full h-full object-contain" />
-                      )}
+                    <div className="logo-icon w-8 h-8 sm:w-9 sm:h-9 bg-white rounded-[10px] flex items-center justify-center shadow-md group-hover:scale-105 transition-transform shrink-0 overflow-hidden p-0.5">
+                      <SafeImage 
+                        src={settings.logoUrl && settings.logoUrl !== '/pda-logo.svg' ? settings.logoUrl : '/icon-512.png'} 
+                        className="w-full h-full object-contain" 
+                        alt="PDA Comercial"
+                      />
                     </div>
                     <div className="logo-text flex flex-col">
                       <strong className="text-base sm:text-lg font-black text-white leading-none tracking-tight">
