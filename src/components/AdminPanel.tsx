@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   collection, 
@@ -7,65 +7,27 @@ import {
   setDoc,
   updateDoc, 
   deleteDoc, 
-  onSnapshot,
-  query,
-  orderBy
+  onSnapshot
 } from 'firebase/firestore';
 import { signOut, User as FirebaseUser } from 'firebase/auth';
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer 
-} from 'recharts';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { 
   LayoutDashboard, 
   Package, 
   ShoppingBag, 
   Clock, 
   Users, 
-  Star, 
   DollarSign, 
   Settings, 
   Menu, 
   X, 
   Bell, 
-  Check,
-  CheckCircle2,
-  Plus, 
-  Edit, 
-  Trash2, 
-  Search, 
-  Filter, 
-  History, 
-  Eye, 
-  Settings2, 
-  ShoppingCart, 
-  Phone, 
-  Mail, 
-  Layout, 
-  Monitor, 
-  RotateCcw, 
-  Save, 
-  ImageIcon, 
-  ArrowLeft, 
-  AlertCircle, 
-  TrendingUp,
-  Sparkles,
-  Layers,
-  MessageSquare,
-  MessageCircle,
-  Tag,
-  Percent,
-  CheckSquare,
-  Square
+  Check, 
+  CheckCircle2, 
+  ArrowLeft,
+  UploadCloud,
+  Tag
 } from 'lucide-react';
 
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
@@ -79,12 +41,22 @@ import {
   SiteSettings, 
   Stats, 
   Coupon,
-  BannerSlide,
   DiscountSettings
 } from '../types';
-import { getVariationStock, getVariationStockDetails } from '../lib/stockUtils';
-import { SafeImage, safeFormatDate } from './SafeImage';
-import { PdaLogo } from './PdaLogo';
+import { getVariationStockDetails } from '../lib/stockUtils';
+import { SafeImage } from './SafeImage';
+import TabLoadingSkeleton from './admin/TabLoadingSkeleton';
+
+// Lazy load each section on demand to keep the dashboard ultra lightweight
+const DashboardTab = React.lazy(() => import('./admin/tabs/DashboardTab'));
+const InventoryTab = React.lazy(() => import('./admin/tabs/InventoryTab'));
+const SalesTab = React.lazy(() => import('./admin/tabs/SalesTab'));
+const ReservationsTab = React.lazy(() => import('./admin/tabs/ReservationsTab'));
+const CustomersTab = React.lazy(() => import('./admin/tabs/CustomersTab'));
+const CouponsTab = React.lazy(() => import('./admin/tabs/CouponsTab'));
+const FinanceTab = React.lazy(() => import('./admin/tabs/FinanceTab'));
+const SettingsTab = React.lazy(() => import('./admin/tabs/SettingsTab'));
+const GoogleDriveModal = React.lazy(() => import('./admin/GoogleDriveModal'));
 
 interface AdminPanelProps {
   user: FirebaseUser | null;
@@ -103,7 +75,6 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
-  user,
   settings,
   setSettings,
   products,
@@ -145,6 +116,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Modals state
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productForm, setProductForm] = useState({
     name: '',
@@ -298,16 +270,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Notifications calculation
   const pendingReservationsCount = useMemo(() => {
     return sales.filter(s => s.type === 'reservation' && s.status === 'pending').length;
-  }, [sales]);
-
-  const lastSeenTime = useMemo(() => {
-    return localStorage.getItem('last_seen_reservations_time') || '';
-  }, [unseenReservations]);
-
-  const relevantReservations = useMemo(() => {
-    return sales
-      .filter(s => s.type === 'reservation')
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [sales]);
 
   // Handlers
@@ -558,17 +520,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleUpdateReservationStatus = async (id: string, status: 'paid' | 'cancelled') => {
     try {
-      const sale = sales.find(s => s.id === id);
-      if (!sale) return;
+      const reservation = sales.find(s => s.id === id);
+      if (!reservation) return;
 
-      const updateData: any = { status };
+      const updateData: any = { 
+        status,
+        paidAt: status === 'paid' ? new Date().toISOString() : null
+      };
+
       if (status === 'paid') {
         updateData.type = 'sale';
-        updateData.paidAmount = sale.totalAmount;
-        updateData.paidAt = new Date().toISOString();
+        updateData.paidAmount = reservation.totalAmount;
 
-        // Decrement stock for each item with exact province synchronization
-        for (const item of sale.items) {
+        const province = reservation.customerProvince || 'Huíla';
+        for (const item of reservation.items) {
           const stockItem = stock.find(s => 
             s.productId === item.productId && 
             s.variation.color === item.variation.color && 
@@ -576,7 +541,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           );
 
           if (stockItem) {
-            const province = sale.customerProvince === 'Cunene' ? 'Cunene' : 'Huíla';
             const currentHuila = Math.max(0, Math.floor(Number(stockItem.quantitiesByProvince?.['Huíla']) || 0));
             const currentCunene = Math.max(0, Math.floor(Number(stockItem.quantitiesByProvince?.['Cunene']) || 0));
             
@@ -602,69 +566,77 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  const exportToPDF = (type: 'sales' | 'debts') => {
-    const doc = new jsPDF();
-    const now = format(new Date(), 'dd/MM/yyyy HH:mm');
-    
-    doc.setFontSize(20);
-    doc.text('PDA COMERCIAL', 105, 15, { align: 'center' });
-    doc.setFontSize(14);
-    doc.text(type === 'sales' ? 'Relatório de Vendas' : 'Relatório de Devedores', 105, 25, { align: 'center' });
-    doc.setFontSize(10);
-    doc.text(`Gerado em: ${now}`, 105, 32, { align: 'center' });
+  // Dynamic on-demand PDF export (avoids bundling jsPDF in main thread)
+  const exportToPDF = async (type: 'sales' | 'debts') => {
+    try {
+      const { default: jsPDF } = await import('jspdf');
+      const { default: autoTable } = await import('jspdf-autotable');
+      const doc = new jsPDF();
+      const now = format(new Date(), 'dd/MM/yyyy HH:mm');
+      
+      doc.setFontSize(20);
+      doc.text('PDA COMERCIAL', 105, 15, { align: 'center' });
+      doc.setFontSize(14);
+      doc.text(type === 'sales' ? 'Relatório de Vendas' : 'Relatório de Devedores', 105, 25, { align: 'center' });
+      doc.setFontSize(10);
+      doc.text(`Gerado em: ${now}`, 105, 32, { align: 'center' });
 
-    if (type === 'sales') {
-      const filteredSales = sales.filter(s => {
-        const date = new Date(s.createdAt);
-        const [year, month] = selectedMonth.split('-');
-        const matchesMonth = s.type === 'sale' && date.getFullYear() === parseInt(year) && (date.getMonth() + 1) === parseInt(month);
-        if (!matchesMonth) return false;
-        return showArchived ? true : !s.archived;
-      });
+      if (type === 'sales') {
+        const filteredSales = sales.filter(s => {
+          const date = new Date(s.createdAt);
+          const [year, month] = selectedMonth.split('-');
+          const matchesMonth = s.type === 'sale' && date.getFullYear() === parseInt(year) && (date.getMonth() + 1) === parseInt(month);
+          if (!matchesMonth) return false;
+          return showArchived ? true : !s.archived;
+        });
 
-      const tableData = filteredSales.map(s => [
-        format(new Date(s.createdAt), 'dd/MM/yyyy'),
-        s.customerName || 'N/A',
-        s.items.map(i => `${i.productName} (x${i.quantity})`).join(', '),
-        `KZ ${s.totalAmount.toLocaleString()}`,
-        s.archived ? 'Arquivada' : 'Ativa'
-      ]);
+        const tableData = filteredSales.map(s => [
+          format(new Date(s.createdAt), 'dd/MM/yyyy'),
+          s.customerName || 'N/A',
+          s.items.map(i => `${i.productName} (x${i.quantity})`).join(', '),
+          `KZ ${s.totalAmount.toLocaleString()}`,
+          s.archived ? 'Arquivada' : 'Ativa'
+        ]);
 
-      autoTable(doc, {
-        startY: 40,
-        head: [['Data', 'Cliente', 'Itens', 'Total', 'Status']],
-        body: tableData,
-        theme: 'grid',
-        headStyles: { fillColor: [234, 88, 12] }
-      });
+        autoTable(doc, {
+          startY: 40,
+          head: [['Data', 'Cliente', 'Itens', 'Total', 'Status']],
+          body: tableData,
+          theme: 'grid',
+          headStyles: { fillColor: [234, 88, 12] }
+        });
 
-      const total = filteredSales.reduce((acc, s) => acc + s.totalAmount, 0);
-      doc.text(`Total do Período: KZ ${total.toLocaleString()}`, 14, (doc as any).lastAutoTable.finalY + 10);
-    } else {
-      const tableData = debts.map(d => {
-        const customer = customers.find(c => c.id === d.customerId);
-        return [
-          customer?.name || 'N/A',
-          `KZ ${d.amount.toLocaleString()}`,
-          `KZ ${d.remainingAmount.toLocaleString()}`,
-          format(new Date(d.dueDate), 'dd/MM/yyyy'),
-          d.status === 'paid' ? 'Pago' : 'Pendente'
-        ];
-      });
+        const total = filteredSales.reduce((acc, s) => acc + s.totalAmount, 0);
+        doc.text(`Total do Período: KZ ${total.toLocaleString()}`, 14, (doc as any).lastAutoTable.finalY + 10);
+      } else {
+        const tableData = debts.map(d => {
+          const customer = customers.find(c => c.id === d.customerId);
+          return [
+            customer?.name || 'N/A',
+            `KZ ${d.amount.toLocaleString()}`,
+            `KZ ${d.remainingAmount.toLocaleString()}`,
+            format(new Date(d.dueDate), 'dd/MM/yyyy'),
+            d.status === 'paid' ? 'Pago' : 'Pendente'
+          ];
+        });
 
-      autoTable(doc, {
-        startY: 40,
-        head: [['Cliente', 'Valor Original', 'Saldo Devedor', 'Vencimento', 'Status']],
-        body: tableData,
-        theme: 'grid',
-        headStyles: { fillColor: [234, 88, 12] }
-      });
+        autoTable(doc, {
+          startY: 40,
+          head: [['Cliente', 'Valor Original', 'Saldo Devedor', 'Vencimento', 'Status']],
+          body: tableData,
+          theme: 'grid',
+          headStyles: { fillColor: [234, 88, 12] }
+        });
 
-      const totalPending = debts.reduce((acc, d) => acc + d.remainingAmount, 0);
-      doc.text(`Total Pendente: KZ ${totalPending.toLocaleString()}`, 14, (doc as any).lastAutoTable.finalY + 10);
+        const totalPending = debts.reduce((acc, d) => acc + d.remainingAmount, 0);
+        doc.text(`Total Pendente: KZ ${totalPending.toLocaleString()}`, 14, (doc as any).lastAutoTable.finalY + 10);
+      }
+
+      doc.save(`PDA_Comercial_${type}_${selectedMonth}.pdf`);
+    } catch (pdfErr) {
+      console.error('Erro ao gerar PDF:', pdfErr);
+      alert('Falha ao exportar PDF. Tente novamente.');
     }
-
-    doc.save(`PDA_Comercial_${type}_${selectedMonth}.pdf`);
   };
 
   const handleArchiveMonth = async () => {
@@ -680,9 +652,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       });
 
       for (const sale of salesToArchive) {
-        await updateDoc(doc(db, 'sales', sale.id), { archived: true });
+        await updateDoc(doc(db, 'sales', sale.id), {
+          archived: true
+        });
       }
-      alert('Vendas arquivadas com sucesso!');
+      alert(`Todas as vendas de ${monthName} foram arquivadas.`);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, 'sales');
     }
@@ -758,7 +732,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className={cn(
-                  "w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-all",
+                  "w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-all cursor-pointer",
                   adminTab === item.id 
                     ? "bg-primary text-white shadow-lg" 
                     : shouldBlink
@@ -773,11 +747,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
                 {shouldBlink && (
                   <span className="flex items-center gap-1.5">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                    </span>
-                    <span className="bg-amber-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full animate-pulse">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                    <span className="text-[10px] font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">
                       {pendingReservationsCount}
                     </span>
                   </span>
@@ -796,37 +767,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             }}
             className="flex items-center gap-3 mb-4 cursor-pointer hover:bg-zinc-50 p-2 rounded-2xl transition-all active:scale-95 group"
           >
-            <div 
-              className="w-10 h-10 rounded-full flex items-center justify-center font-bold group-hover:shadow-sm transition-all"
-              style={{ backgroundColor: `${settings.primaryColor}15`, color: settings.primaryColor }}
-            >
-              {user?.displayName?.[0] || 'A'}
+            <div className="w-10 h-10 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-600 font-bold group-hover:bg-red-50 group-hover:text-red-600 transition-colors">
+              P
             </div>
-            <div className="overflow-hidden flex-1">
-              <div className="text-sm font-bold truncate group-hover:text-red-500 transition-colors">{user?.displayName || 'Admin'}</div>
-              <div className="text-xs text-zinc-500 truncate">Clique para sair</div>
+            <div>
+              <div className="text-xs font-bold text-zinc-900 group-hover:text-red-600 transition-colors">PDA Admin</div>
+              <div className="text-[10px] text-zinc-500">Terminar Sessão</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Admin View */}
-      <main className="flex-1 p-4 md:p-8 overflow-y-auto pb-20">
-        <div className="max-w-6xl mx-auto">
-          <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 md:mb-12">
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
+        <div className="p-4 sm:p-6 lg:p-10 space-y-8 max-w-7xl mx-auto w-full">
+          {/* Header */}
+          <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div className="flex items-center justify-between w-full md:w-auto">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4">
                 <button 
                   onClick={() => setIsSidebarOpen(true)}
                   className="lg:hidden p-2.5 bg-white border border-zinc-200 rounded-2xl shadow-sm hover:bg-zinc-50 active:scale-95 transition-all"
-                  aria-label="Abrir Menu"
                 >
-                  <Menu className="w-6 h-6" />
+                  <Menu className="w-5 h-5" />
                 </button>
                 <div>
-                  <h1 className="text-xl md:text-3xl font-bold mb-0.5">
+                  <h1 className="text-2xl md:text-3xl font-black text-zinc-900 tracking-tight">
                     {adminTab === 'dashboard' && 'Visão Geral'}
-                    {adminTab === 'inventory' && 'Gestão de Estoque'}
+                    {adminTab === 'inventory' && 'Gestão de Estoque & Produtos'}
                     {adminTab === 'sales' && 'Controle de Vendas'}
                     {adminTab === 'reservations' && 'Gestão de Reservas'}
                     {adminTab === 'customers' && 'Base de Clientes'}
@@ -834,7 +802,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     {adminTab === 'finance' && 'Financeiro & Dívidas'}
                     {adminTab === 'settings' && 'Definições do Site'}
                   </h1>
-                  <p className="text-zinc-500 text-xs md:text-sm">Bem-vindo de volta ao centro de operações.</p>
+                  <p className="text-zinc-500 text-xs md:text-sm">Painel leve com carregamento sob demanda.</p>
                 </div>
               </div>
 
@@ -879,7 +847,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               <button 
                 onClick={onBackToStore}
-                className="glass px-5 md:px-6 py-2.5 md:py-3 rounded-2xl text-xs md:text-sm font-bold flex items-center gap-2 hover:bg-zinc-100 transition-all w-full md:w-auto justify-center bg-white border border-zinc-200 shadow-sm"
+                className="glass px-5 md:px-6 py-2.5 md:py-3 rounded-2xl text-xs md:text-sm font-bold flex items-center gap-2 hover:bg-zinc-100 transition-all w-full md:w-auto justify-center bg-white border border-zinc-200 shadow-sm cursor-pointer"
               >
                 <ArrowLeft className="w-4 h-4" />
                 Voltar para Loja
@@ -887,7 +855,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           </header>
 
-          {/* Responsive Notifications Dropdown / Dialog (Mobile & Desktop) */}
+          {/* Notifications Dropdown */}
           <AnimatePresence>
             {isNotificationsDropdownOpen && (
               <>
@@ -918,7 +886,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       {unseenReservations.length > 0 && onMarkNotificationsAsRead && (
                         <button
                           onClick={onMarkNotificationsAsRead}
-                          className="text-[10px] font-bold uppercase tracking-wider text-orange-600 hover:text-orange-700 bg-orange-50 px-2 py-1 rounded-lg transition-colors"
+                          className="text-[10px] font-bold uppercase tracking-wider text-orange-600 hover:text-orange-700 bg-orange-50 px-2 py-1 rounded-lg transition-colors cursor-pointer"
                           title="Marcar todas como lidas"
                         >
                           Limpar todas
@@ -939,7 +907,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <CheckCircle2 className="w-9 h-9 text-emerald-500 opacity-90" />
                         <span className="font-bold text-zinc-700 text-sm">Tudo em dia!</span>
                         <span className="text-[11px] text-zinc-400 max-w-xs">
-                          Todas as notificações abertas foram arquivadas. Novas reservas aparecerão aqui automaticamente.
+                          Todas as notificações foram lidas.
                         </span>
                       </div>
                     ) : (
@@ -1003,7 +971,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         setIsNotificationsDropdownOpen(false);
                         setAdminTab('reservations');
                       }}
-                      className="w-full py-2 bg-zinc-50 hover:bg-zinc-100 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-700 transition-colors text-center"
+                      className="w-full py-2 bg-zinc-50 hover:bg-zinc-100 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-700 transition-colors text-center cursor-pointer"
                     >
                       Ir para Gestão de Reservas
                     </button>
@@ -1013,2026 +981,122 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             )}
           </AnimatePresence>
 
-          {/* Admin Tabs Content */}
+          {/* Admin Tabs Content - All rendered on demand with Suspense */}
           <AnimatePresence mode="wait">
             {adminTab === 'dashboard' && (
-              <motion.div 
-                key="dashboard"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="space-y-8"
-              >
-                {/* Stats Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
-                  {[
-                    { 
-                      label: 'Vendas (Mês)', 
-                      value: `KZ ${sales.filter(s => {
-                        const date = new Date(s.createdAt);
-                        const now = new Date();
-                        const isCurrentMonth = date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-                        if (!isCurrentMonth) return false;
-                        if (settings.salesResetDate) {
-                          return s.type === 'sale' && date.getTime() >= new Date(settings.salesResetDate).getTime();
-                        }
-                        return s.type === 'sale';
-                      }).reduce((acc, s) => acc + s.totalAmount, 0).toLocaleString()}`, 
-                      icon: TrendingUp, 
-                      color: 'text-emerald-400' 
-                    },
-                    { 
-                      label: 'Recebido (Mês)', 
-                      value: `KZ ${(
-                        sales.filter(s => {
-                          if (!s.paidAt) return false;
-                          const date = new Date(s.paidAt);
-                          const now = new Date();
-                          const isCurrentMonth = date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-                          if (!isCurrentMonth) return false;
-                          if (settings.salesResetDate) {
-                            return s.status === 'paid' && date.getTime() >= new Date(settings.salesResetDate).getTime();
-                          }
-                          return s.status === 'paid';
-                        }).reduce((acc, s) => acc + s.totalAmount, 0) +
-                        debts.filter(d => {
-                          if (!d.paidAt) return false;
-                          const date = new Date(d.paidAt);
-                          const now = new Date();
-                          const isCurrentMonth = date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-                          if (!isCurrentMonth) return false;
-                          if (settings.salesResetDate) {
-                            return d.status === 'paid' && date.getTime() >= new Date(settings.salesResetDate).getTime();
-                          }
-                          return d.status === 'paid';
-                        }).reduce((acc, d) => acc + d.amount, 0)
-                      ).toLocaleString()}`, 
-                      icon: DollarSign, 
-                      color: 'text-emerald-500' 
-                    },
-                    { label: 'Reservas Ativas', value: sales.filter(s => s.type === 'reservation' && s.status === 'pending').length, icon: Clock, color: 'text-orange-400' },
-                    { label: 'Dívidas Pendentes', value: `KZ ${debts.reduce((acc, d) => acc + d.remainingAmount, 0).toLocaleString()}`, icon: AlertCircle, color: 'text-red-400' },
-                    { label: 'Total Clientes', value: customers.length, icon: Users, color: 'text-blue-400' },
-                    { label: 'Total Visitas', value: stats?.visitorCount || 0, icon: Eye, color: 'text-purple-400' },
-                  ].map((stat) => (
-                    <div key={stat.label} className="glass p-6 rounded-3xl bg-white border border-zinc-200">
-                      <div className="flex justify-between items-start mb-4">
-                        <div className={cn("p-3 rounded-2xl bg-zinc-100", stat.color)}>
-                          <stat.icon className="w-6 h-6" />
-                        </div>
-                      </div>
-                      <div className="text-2xl font-bold mb-1">{stat.value}</div>
-                      <div className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{stat.label}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Charts */}
-                <div className="grid lg:grid-cols-2 gap-8">
-                  <div className="glass p-8 rounded-[40px] bg-white border border-zinc-200">
-                    <h3 className="text-lg font-bold mb-6">Fluxo de Vendas</h3>
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={sales.slice(0, 7).reverse().map(s => ({ date: safeFormatDate(s.createdAt, 'dd/MM'), amount: s.totalAmount }))}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#00000010" vertical={false} />
-                          <XAxis dataKey="date" stroke="#00000040" fontSize={12} />
-                          <YAxis stroke="#00000040" fontSize={12} />
-                          <Tooltip 
-                            contentStyle={{ backgroundColor: '#18181b', border: '1px solid #ffffff10', borderRadius: '12px', color: '#fff' }}
-                            itemStyle={{ color: '#ea580c' }}
-                          />
-                          <Line type="monotone" dataKey="amount" stroke="#ea580c" strokeWidth={3} dot={{ fill: '#ea580c', r: 4 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                  <div className="glass p-8 rounded-[40px] bg-white border border-zinc-200">
-                    <h3 className="text-lg font-bold mb-6">Estoque Crítico</h3>
-                    <div className="space-y-4">
-                      {stock.map(s => ({
-                        ...s,
-                        realQuantity: getVariationStock(s)
-                      })).filter(s => s.realQuantity < 5).slice(0, 5).map(item => {
-                        const product = products.find(p => p.id === item.productId);
-                        return (
-                          <div key={item.id} className="flex items-center justify-between p-4 bg-zinc-50 border border-zinc-100 rounded-2xl">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl bg-red-400/10 flex items-center justify-center text-red-400">
-                                <AlertCircle className="w-5 h-5" />
-                              </div>
-                              <div>
-                                <div className="text-sm font-bold">{product?.name}</div>
-                                <div className="text-xs text-zinc-500">{item.variation.color} / {item.variation.size}</div>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm font-bold text-red-400">{item.realQuantity} un</div>
-                              <div className="text-[10px] text-zinc-500 uppercase font-bold">
-                                {item.realQuantity === 0 ? 'Esgotado' : 'Saldo Baixo'}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
+              <Suspense fallback={<TabLoadingSkeleton label="o Dashboard" />}>
+                <DashboardTab 
+                  sales={sales}
+                  stock={stock}
+                  products={products}
+                  customers={customers}
+                  debts={debts}
+                  stats={stats}
+                  settings={settings}
+                />
+              </Suspense>
             )}
 
             {adminTab === 'inventory' && (
-              <motion.div 
-                key="inventory"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-6"
-              >
-                <div className="flex justify-between items-center bg-zinc-100 p-6 rounded-3xl">
-                  <div className="flex gap-4">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4" />
-                      <input type="text" placeholder="Filtrar estoque..." className="bg-zinc-50 border border-zinc-200 rounded-xl pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-orange-500" />
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => {
-                      setEditingProduct(null);
-                      setProductForm({ 
-                        name: '', 
-                        description: '', 
-                        price: 0, 
-                        category: '', 
-                        images: [''], 
-                        attributes: { colors: [''], sizes: ['S', 'M', 'L'] },
-                        colorImages: {},
-                        isFeatured: false 
-                      });
-                      setIsProductModalOpen(true);
-                    }}
-                    className="bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Novo Produto
-                  </button>
-                </div>
-
-                {/* Category Tabs */}
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                  <button
-                    onClick={() => setSelectedInventoryCategory('all')}
-                    className={cn(
-                      "px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all whitespace-nowrap",
-                      selectedInventoryCategory === 'all' ? "bg-orange-600 text-white shadow-lg shadow-orange-600/20" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"
-                    )}
-                  >
-                    Todos
-                  </button>
-                  {groupedStock.sortedCategories.map(category => (
-                    <button
-                      key={category}
-                      onClick={() => setSelectedInventoryCategory(category)}
-                      className={cn(
-                        "px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all whitespace-nowrap",
-                        selectedInventoryCategory === category ? "bg-orange-600 text-white shadow-lg shadow-orange-600/20" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"
-                      )}
-                    >
-                      {category}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="glass rounded-[32px] overflow-hidden bg-white border border-zinc-200">
-                  {/* Desktop View */}
-                  <div className="hidden md:block">
-                    <table className="w-full text-left">
-                      <thead className="bg-zinc-50 text-xs font-bold uppercase tracking-widest text-zinc-500">
-                        <tr>
-                          <th className="px-6 py-4">Produto</th>
-                          <th className="px-6 py-4">Variação</th>
-                          <th className="px-6 py-4">Saldo Atual</th>
-                          <th className="px-6 py-4">Status</th>
-                          <th className="px-6 py-4 text-right">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100">
-                        {groupedStock.sortedCategories
-                          .filter(cat => selectedInventoryCategory === 'all' || selectedInventoryCategory === cat)
-                          .map(category => (
-                          <React.Fragment key={category}>
-                            {selectedInventoryCategory === 'all' && (
-                              <tr className="bg-zinc-50/50">
-                                <td colSpan={5} className="px-6 py-2 text-[10px] font-bold uppercase tracking-widest text-orange-600 bg-orange-50/30">
-                                  {category}
-                                </td>
-                              </tr>
-                            )}
-                            {groupedStock.groups[category].map(item => {
-                              const product = products.find(p => p.id === item.productId);
-                              const itemKey = item.id || `${item.productId}-${item.variation.color}-${item.variation.size}`;
-                              return (
-                                <tr key={itemKey} className="hover:bg-zinc-50 transition-colors">
-                                  <td className="px-6 py-4">
-                                    <div className="flex items-center gap-3">
-                                      <div className="font-bold">{item.productName}</div>
-                                      <div className="flex gap-1">
-                                        <button 
-                                          onClick={() => {
-                                            if (product) {
-                                              setEditingProduct(product);
-                                              setProductForm({
-                                                name: product.name || '',
-                                                description: product.description || '',
-                                                price: product.price || 0,
-                                                category: product.category || '',
-                                                images: product.images || [''],
-                                                attributes: product.attributes || { colors: [''], sizes: ['S', 'M', 'L'] },
-                                                colorImages: product.colorImages || {},
-                                                isFeatured: product.isFeatured || false
-                                              });
-                                              setIsProductModalOpen(true);
-                                            }
-                                          }}
-                                          className="p-1 hover:bg-zinc-100 rounded text-zinc-500 hover:text-orange-600"
-                                        >
-                                          <Edit className="w-3 h-3" />
-                                        </button>
-                                        <button 
-                                          onClick={() => product && handleDeleteProduct(product.id)}
-                                          className="p-1 hover:bg-zinc-100 rounded text-zinc-500 hover:text-red-400"
-                                        >
-                                          <Trash2 className="w-3 h-3" />
-                                        </button>
-                                      </div>
-                                    </div>
-                                    <div className="text-xs text-zinc-500">{item.category}</div>
-                                  </td>
-                                  <td className="px-6 py-4">
-                                    <div className="flex gap-2">
-                                      <span className="px-2 py-1 bg-zinc-100 rounded text-[10px] font-bold uppercase">{item.variation.color}</span>
-                                      <span className="px-2 py-1 bg-zinc-100 rounded text-[10px] font-bold uppercase">{item.variation.size}</span>
-                                    </div>
-                                  </td>
-                                  <td className="px-6 py-4 font-mono font-bold">
-                                    <div className="flex flex-col gap-1">
-                                      <span className="text-[10px] text-zinc-400">Total: {item.quantity}</span>
-                                      <div className="flex gap-2">
-                                        <span className="text-xs">Cunene: {item.quantitiesByProvince?.Cunene || 0}</span>
-                                        <span className="text-xs">Huíla: {item.quantitiesByProvince?.Huíla || 0}</span>
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td className="px-6 py-4">
-                                    {item.quantity <= 0 ? (
-                                      <span className="text-[10px] font-bold uppercase bg-red-400/10 text-red-400 px-2 py-1 rounded-lg">Esgotado</span>
-                                    ) : item.quantity < 5 ? (
-                                      <span className="text-[10px] font-bold uppercase bg-orange-400/10 text-orange-400 px-2 py-1 rounded-lg">Crítico</span>
-                                    ) : (
-                                      <span className="text-[10px] font-bold uppercase bg-emerald-400/10 text-emerald-400 px-2 py-1 rounded-lg">Ok</span>
-                                    )}
-                                  </td>
-                                  <td className="px-6 py-4 text-right">
-                                    <button 
-                                      onClick={() => {
-                                        setSelectedStockItem(item);
-                                        setStockForm({ 
-                                          Cunene: item.quantitiesByProvince?.Cunene || 0,
-                                          Huíla: item.quantitiesByProvince?.Huíla || 0
-                                        });
-                                        setIsStockModalOpen(true);
-                                      }}
-                                      className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-orange-600 transition-all"
-                                    >
-                                      <Edit className="w-4 h-4" />
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </React.Fragment>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Mobile View */}
-                  <div className="md:hidden divide-y divide-zinc-100">
-                    {groupedStock.sortedCategories
-                      .filter(cat => selectedInventoryCategory === 'all' || selectedInventoryCategory === cat)
-                      .map(category => (
-                        <div key={category} className="p-4 space-y-4">
-                          {selectedInventoryCategory === 'all' && (
-                             <div className="text-[10px] font-bold uppercase tracking-widest text-orange-600 bg-orange-50 px-3 py-1 rounded-full w-fit">
-                                {category}
-                              </div>
-                          )}
-                          <div className="space-y-4">
-                            {groupedStock.groups[category].map(item => {
-                              const product = products.find(p => p.id === item.productId);
-                              const itemKey = item.id || `${item.productId}-${item.variation.color}-${item.variation.size}`;
-                              return (
-                                <div key={itemKey} className="bg-zinc-50/50 p-4 rounded-2xl space-y-3">
-                                  <div className="flex justify-between items-start">
-                                    <div>
-                                      <div className="font-bold text-sm">{item.productName}</div>
-                                      <div className="text-[10px] text-zinc-500">{item.variation.color} / {item.variation.size}</div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                      <button 
-                                        onClick={() => {
-                                          if (product) {
-                                            setEditingProduct(product);
-                                            setProductForm({
-                                              name: product.name || '',
-                                              description: product.description || '',
-                                              price: product.price || 0,
-                                              category: product.category || '',
-                                              images: product.images || [''],
-                                              attributes: product.attributes || { colors: [''], sizes: ['S', 'M', 'L'] },
-                                              colorImages: product.colorImages || {},
-                                              isFeatured: product.isFeatured || false
-                                            });
-                                            setIsProductModalOpen(true);
-                                          }
-                                        }}
-                                        className="p-2 bg-white rounded-lg shadow-sm text-zinc-400 hover:text-orange-600"
-                                      >
-                                        <Settings2 className="w-4 h-4" />
-                                      </button>
-                                      <button 
-                                         onClick={() => {
-                                          setSelectedStockItem(item);
-                                          setStockForm({ 
-                                            Cunene: item.quantitiesByProvince?.Cunene || 0,
-                                            Huíla: item.quantitiesByProvince?.Huíla || 0
-                                          });
-                                          setIsStockModalOpen(true);
-                                        }}
-                                        className="p-2 bg-white rounded-lg shadow-sm text-orange-600"
-                                      >
-                                         <Edit className="w-4 h-4" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-200/50">
-                                    <div className="flex flex-col">
-                                      <span className="text-[8px] font-bold text-zinc-400 uppercase">Cunene</span>
-                                      <span className="text-xs font-bold">{item.quantitiesByProvince?.Cunene || 0}</span>
-                                    </div>
-                                    <div className="flex flex-col border-l border-zinc-200/50 pl-3">
-                                      <span className="text-[8px] font-bold text-zinc-400 uppercase">Huíla</span>
-                                      <span className="text-xs font-bold">{item.quantitiesByProvince?.Huíla || 0}</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {adminTab === 'finance' && (
-              <motion.div 
-                key="finance"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-8"
-              >
-                <div className="grid md:grid-cols-3 gap-6">
-                  <div className="glass p-6 rounded-3xl border-red-500/20 bg-red-500/5 border">
-                    <div className="text-xs font-bold text-red-400 uppercase tracking-widest mb-2">Total em Dívidas</div>
-                    <div className="text-3xl font-bold">KZ {debts.reduce((acc, d) => acc + d.remainingAmount, 0).toLocaleString()}</div>
-                  </div>
-                  <div className="glass p-6 rounded-3xl border-emerald-500/20 bg-emerald-500/5 border">
-                    <div className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-2">Recebido (Mês)</div>
-                    <div className="text-3xl font-bold">KZ {sales.filter(s => s.status === 'paid').reduce((acc, s) => acc + s.paidAmount, 0).toLocaleString()}</div>
-                  </div>
-                  <div className="glass p-6 rounded-3xl border-orange-200 bg-orange-50/50 border">
-                    <div className="text-xs font-bold text-orange-400 uppercase tracking-widest mb-2">Clientes Devedores</div>
-                    <div className="text-3xl font-bold">{new Set(debts.filter(d => d.status === 'active').map(d => d.customerId)).size}</div>
-                  </div>
-                </div>
-
-                <div className="glass rounded-[32px] overflow-hidden bg-white border border-zinc-200">
-                  <div className="p-6 border-b border-zinc-200 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <h3 className="font-bold">Controle de Devedores</h3>
-                    <div className="flex flex-wrap gap-4">
-                      <button 
-                        onClick={() => exportToPDF('debts')}
-                        className="text-xs font-bold text-orange-400 uppercase tracking-widest hover:text-orange-300 flex items-center gap-2"
-                      >
-                        <DollarSign className="w-4 h-4" />
-                        Exportar Relatório
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setEditingDebt(null);
-                          setDebtForm({ customerName: '', customerPhone: '', amount: 0, remainingAmount: 0, dueDate: '' });
-                          setIsDebtModalOpen(true);
-                        }}
-                        className="bg-orange-600 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-orange-700 transition-all flex items-center gap-2"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Nova Dívida
-                      </button>
-                    </div>
-                  </div>
-                  <table className="w-full text-left">
-                    <thead className="bg-zinc-50 text-xs font-bold uppercase tracking-widest text-zinc-500">
-                      <tr>
-                        <th className="px-6 py-4">Cliente</th>
-                        <th className="px-6 py-4">Valor Original</th>
-                        <th className="px-6 py-4">Saldo Devedor</th>
-                        <th className="px-6 py-4">Vencimento</th>
-                        <th className="px-6 py-4 text-right">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {debts.map(debt => {
-                        const customer = customers.find(c => c.id === debt.customerId);
-                        return (
-                          <tr key={debt.id} className="hover:bg-zinc-50 transition-colors">
-                            <td className="px-6 py-4">
-                              <div className="font-bold">{customer?.name}</div>
-                              <div className="text-xs text-zinc-500">{customer?.phone}</div>
-                            </td>
-                            <td className="px-6 py-4 text-sm">KZ {(debt.amount || 0).toFixed(2)}</td>
-                            <td className="px-6 py-4">
-                              <span className="text-red-400 font-bold">KZ {(debt.remainingAmount || 0).toFixed(2)}</span>
-                            </td>
-                            <td className="px-6 py-4 text-sm">
-                              {safeFormatDate(debt.dueDate, 'dd/MM/yyyy')}
-                            </td>
-                            <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                              <button 
-                                onClick={() => {
-                                  setEditingDebt(debt);
-                                  setDebtForm({ 
-                                    customerName: customer?.name || '', 
-                                    customerPhone: customer?.phone || '', 
-                                    amount: debt.amount || 0, 
-                                    remainingAmount: debt.remainingAmount || 0, 
-                                    dueDate: debt.dueDate || '' 
-                                  });
-                                  setIsDebtModalOpen(true);
-                                }}
-                                className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-orange-600 transition-all"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button 
-                                onClick={() => handleDeleteDebt(debt.id)}
-                                className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-red-600 transition-all"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                              <button 
-                                onClick={async () => {
-                                  if (window.confirm('Deseja baixar o pagamento total desta dívida?')) {
-                                    try {
-                                      await updateDoc(doc(db, 'debts', debt.id), { 
-                                        remainingAmount: 0, 
-                                        status: 'paid',
-                                        paidAt: new Date().toISOString()
-                                      });
-                                    } catch (err) {
-                                      handleFirestoreError(err, OperationType.UPDATE, `debts/${debt.id}`);
-                                    }
-                                  }
-                                }}
-                                className="bg-emerald-600/20 text-emerald-400 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-emerald-600 hover:text-white transition-all"
-                              >
-                                Baixar
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </motion.div>
+              <Suspense fallback={<TabLoadingSkeleton label="o Estoque e Produtos" />}>
+                <InventoryTab 
+                  products={products}
+                  groupedStock={groupedStock}
+                  selectedInventoryCategory={selectedInventoryCategory}
+                  setSelectedInventoryCategory={setSelectedInventoryCategory}
+                  setEditingProduct={setEditingProduct}
+                  setProductForm={setProductForm}
+                  setIsProductModalOpen={setIsProductModalOpen}
+                  handleDeleteProduct={handleDeleteProduct}
+                  setSelectedStockItem={setSelectedStockItem}
+                  setStockForm={setStockForm}
+                  setIsStockModalOpen={setIsStockModalOpen}
+                />
+              </Suspense>
             )}
 
             {adminTab === 'sales' && (
-              <motion.div 
-                key="sales"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-6"
-              >
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <h2 className="text-xl font-bold">Histórico de Vendas</h2>
-                  <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
-                    <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-zinc-200">
-                      <Filter className="w-4 h-4 text-zinc-400" />
-                      <input 
-                        type="month" 
-                        value={selectedMonth}
-                        onChange={(e) => setSelectedMonth(e.target.value)}
-                        className="text-xs font-bold uppercase outline-none bg-transparent"
-                      />
-                    </div>
-                    <button 
-                      onClick={() => exportToPDF('sales')}
-                      className="bg-zinc-900 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-zinc-800 transition-all flex items-center gap-2"
-                    >
-                      <History className="w-4 h-4" />
-                      Baixar PDF
-                    </button>
-                    <button 
-                      onClick={handleArchiveMonth}
-                      className="bg-orange-50 text-orange-600 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-orange-600 hover:text-white transition-all flex items-center gap-2"
-                    >
-                      <Package className="w-4 h-4" />
-                      Arquivar Mês
-                    </button>
-                    <button 
-                      onClick={() => setShowArchived(!showArchived)}
-                      className={cn(
-                        "px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2",
-                        showArchived ? "bg-orange-600 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-                      )}
-                    >
-                      <Eye className="w-4 h-4" />
-                      {showArchived ? 'Ocultar Arquivados' : 'Ver Arquivados'}
-                    </button>
-                  </div>
-                </div>
-                <div className="glass rounded-[32px] overflow-hidden overflow-x-auto bg-white border border-zinc-200">
-                  <table className="w-full text-left min-w-[800px]">
-                    <thead className="bg-zinc-50 text-xs font-bold uppercase tracking-widest text-zinc-500">
-                      <tr>
-                        <th className="px-6 py-4">Status</th>
-                        <th className="px-6 py-4">Cliente</th>
-                        <th className="px-6 py-4">Itens</th>
-                        <th className="px-6 py-4">Total</th>
-                        <th className="px-6 py-4">Data</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {sales.filter(s => {
-                        const date = new Date(s.createdAt);
-                        const [year, month] = selectedMonth.split('-');
-                        const matchesMonth = s.type === 'sale' && date.getFullYear() === parseInt(year) && (date.getMonth() + 1) === parseInt(month);
-                        if (!matchesMonth) return false;
-                        return showArchived ? true : !s.archived;
-                      }).map(sale => (
-                        <tr key={sale.id} className="hover:bg-zinc-50 transition-colors">
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col gap-1">
-                              <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-lg bg-emerald-400/10 text-emerald-400 w-fit">
-                                Concluída
-                              </span>
-                              {sale.archived && (
-                                <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-lg bg-zinc-100 text-zinc-500 w-fit">
-                                  Arquivada
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="font-bold">{sale.customerName}</div>
-                            <div className="text-xs text-zinc-500">{sale.customerPhone}</div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="space-y-1">
-                              {sale.items.map((item, idx) => (
-                                <div key={idx} className="text-xs">
-                                  <span className="font-bold">{item.productName}</span>
-                                  <span className="text-zinc-500 ml-2">({item.variation.color}/{item.variation.size}) x{item.quantity}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 font-bold">KZ {(sale.totalAmount || 0).toFixed(2)}</td>
-                          <td className="px-6 py-4 text-sm">{safeFormatDate(sale.createdAt, 'dd/MM/yyyy')}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </motion.div>
+              <Suspense fallback={<TabLoadingSkeleton label="o Histórico de Vendas" />}>
+                <SalesTab 
+                  sales={sales}
+                  selectedMonth={selectedMonth}
+                  setSelectedMonth={setSelectedMonth}
+                  showArchived={showArchived}
+                  setShowArchived={setShowArchived}
+                  exportToPDF={exportToPDF}
+                  handleArchiveMonth={handleArchiveMonth}
+                />
+              </Suspense>
             )}
 
             {adminTab === 'reservations' && (
-              <motion.div 
-                key="reservations"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-6"
-              >
-                <div className="flex items-center justify-between gap-4 flex-wrap px-1">
-                  <div>
-                    <h2 className="text-xl font-black text-zinc-900">Reservas de Clientes</h2>
-                    <p className="text-xs text-zinc-500">Gerencie confirmações de pagamento e cancelamentos</p>
-                  </div>
-                  {sales.filter(s => s.type === 'reservation' && s.status === 'cancelled').length > 0 && (
-                    <button
-                      onClick={handleClearAllCancelledReservations}
-                      className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Limpar Todas Canceladas ({sales.filter(s => s.type === 'reservation' && s.status === 'cancelled').length})</span>
-                    </button>
-                  )}
-                </div>
-
-                <div className="glass rounded-[32px] overflow-hidden overflow-x-auto bg-white border border-zinc-200">
-                  <table className="w-full text-left min-w-[800px]">
-                    <thead className="bg-zinc-50 text-xs font-bold uppercase tracking-widest text-zinc-500">
-                      <tr>
-                        <th className="px-6 py-4">Ações</th>
-                        <th className="px-6 py-4">Status</th>
-                        <th className="px-6 py-4">Cliente</th>
-                        <th className="px-6 py-4">Itens</th>
-                        <th className="px-6 py-4">Total</th>
-                        <th className="px-6 py-4">Data</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {sales.filter(s => s.type === 'reservation').map(res => (
-                        <tr key={res.id} className="hover:bg-zinc-50 transition-colors">
-                          <td className="px-6 py-4 text-center">
-                            {res.status === 'pending' && (
-                              <div className="flex flex-col gap-2 min-w-[140px]">
-                                <button 
-                                  onClick={() => handleUpdateReservationStatus(res.id, 'paid')}
-                                  className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-emerald-700 transition-all shadow-sm whitespace-nowrap"
-                                >
-                                  Confirmar Pagamento
-                                </button>
-                                <button 
-                                  onClick={() => handleUpdateReservationStatus(res.id, 'cancelled')}
-                                  className="border border-red-200 text-red-500 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-red-50 transition-all"
-                                >
-                                  Cancelar
-                                </button>
-                              </div>
-                            )}
-                            {res.status === 'cancelled' && (
-                              <button 
-                                onClick={() => handleDeleteCancelledReservation(res.id)}
-                                className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all shadow-xs flex items-center justify-center gap-1.5 mx-auto whitespace-nowrap cursor-pointer active:scale-95"
-                                title="Apagar esta reserva cancelada do histórico permanentemente"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>Apagar Histórico</span>
-                              </button>
-                            )}
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={cn(
-                              "text-[10px] font-bold uppercase px-2 py-1 rounded-lg",
-                              res.status === 'pending' ? "bg-orange-400/10 text-orange-400" : 
-                              res.status === 'paid' ? "bg-emerald-400/10 text-emerald-400" : "bg-red-400/10 text-red-400"
-                            )}>
-                              {res.status === 'pending' ? 'Pendente' : res.status === 'paid' ? 'Confirmada' : 'Cancelada'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="font-bold">{res.customerName}</div>
-                            <div className="text-xs text-zinc-500">{res.customerPhone}</div>
-                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                              {res.channel === 'sms' ? (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-md">
-                                  <MessageSquare className="w-2.5 h-2.5" /> SMS
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md">
-                                  <MessageCircle className="w-2.5 h-2.5" /> WhatsApp
-                                </span>
-                              )}
-                              {res.customerProvince && (
-                                <span className="text-[10px] text-orange-600 font-bold uppercase">
-                                  {res.customerProvince}
-                                </span>
-                              )}
-                            </div>
-                            {(res.customerNeighborhood || res.customerAddress) && (
-                              <div className="text-[10px] text-zinc-400 font-medium mt-0.5">
-                                {res.customerNeighborhood && `Bairro: ${res.customerNeighborhood}`}
-                                {res.customerAddress && ` • Ref: ${res.customerAddress}`}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 min-w-[200px]">
-                            <div className="space-y-2">
-                              {res.items.map((item, idx) => (
-                                <div key={idx} className="flex items-center justify-between gap-4 py-1.5 border-b border-zinc-50 last:border-0">
-                                  <div>
-                                    <div className="text-sm font-bold text-zinc-900">{item.productName}</div>
-                                    <div className="flex gap-1.5 mt-0.5">
-                                      <span className="text-[9px] font-bold uppercase text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded-md">{item.variation.color}</span>
-                                      <span className="text-[9px] font-bold uppercase text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded-md">{item.variation.size}</span>
-                                    </div>
-                                  </div>
-                                  <div className="text-xs font-bold text-zinc-700 bg-zinc-50 px-2 py-1 rounded-lg">x{item.quantity}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 font-bold text-zinc-900">KZ {(res.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="px-6 py-4 text-sm text-zinc-500">{safeFormatDate(res.createdAt, 'dd/MM/yyyy')}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </motion.div>
+              <Suspense fallback={<TabLoadingSkeleton label="as Reservas" />}>
+                <ReservationsTab 
+                  sales={sales}
+                  handleClearAllCancelledReservations={handleClearAllCancelledReservations}
+                  handleUpdateReservationStatus={handleUpdateReservationStatus}
+                  handleDeleteCancelledReservation={handleDeleteCancelledReservation}
+                />
+              </Suspense>
             )}
 
             {adminTab === 'customers' && (
-              <motion.div 
-                key="customers"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-6"
-              >
-                <div className="grid md:grid-cols-3 gap-6">
-                  <div className="glass p-6 rounded-3xl bg-white border border-zinc-200">
-                    <div className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Total de Clientes</div>
-                    <div className="text-3xl font-bold">{customers.length}</div>
-                  </div>
-                  <div className="glass p-6 rounded-3xl bg-white border border-zinc-200">
-                    <div className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Novos (Mês)</div>
-                    <div className="text-3xl font-bold">
-                      {customers.filter(c => {
-                        const date = new Date(c.createdAt);
-                        const now = new Date();
-                        return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-                      }).length}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="glass rounded-[32px] overflow-hidden bg-white border border-zinc-200">
-                  <table className="w-full text-left">
-                    <thead className="bg-zinc-50 text-xs font-bold uppercase tracking-widest text-zinc-500">
-                      <tr>
-                        <th className="px-6 py-4">Nome</th>
-                        <th className="px-6 py-4">Contato</th>
-                        <th className="px-6 py-4">Cadastro</th>
-                        <th className="px-6 py-4 text-right">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {customers.map(customer => (
-                        <tr key={customer.id} className="hover:bg-zinc-50 transition-colors">
-                          <td className="px-6 py-4">
-                            <div className="font-bold">{customer.name}</div>
-                            <div className="text-xs text-zinc-500">{customer.email}</div>
-                          </td>
-                          <td className="px-6 py-4 font-mono text-sm">{customer.phone}</td>
-                          <td className="px-6 py-4 text-sm">{safeFormatDate(customer.createdAt, 'dd/MM/yyyy')}</td>
-                          <td className="px-6 py-4 text-right">
-                            <button 
-                              onClick={() => {
-                                if (window.confirm('Tem certeza que deseja excluir este cliente?')) {
-                                  deleteDoc(doc(db, 'customers', customer.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, 'customers'));
-                                }
-                              }}
-                              className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-red-500 transition-all"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </motion.div>
+              <Suspense fallback={<TabLoadingSkeleton label="a Base de Clientes" />}>
+                <CustomersTab 
+                  customers={customers}
+                />
+              </Suspense>
             )}
 
             {adminTab === 'coupons' && (
-              <motion.div 
-                key="coupons"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-8"
-              >
-                {/* =========================================================
-                    1. GESTÃO DE % DE DESCONTO (% NO CANTO SUPERIOR DOS PRODUTOS)
-                ========================================================== */}
-                <div className="bg-white rounded-[32px] p-6 md:p-8 border border-zinc-200 shadow-sm space-y-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-zinc-100">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-9 h-9 rounded-2xl bg-orange-100 text-[#ff6900] flex items-center justify-center font-bold">
-                          <Percent className="w-5 h-5" />
-                        </div>
-                        <h3 className="text-lg md:text-xl font-black text-zinc-900">
-                          Desconto em Destaque (% no Canto Superior)
-                        </h3>
-                      </div>
-                      <p className="text-zinc-500 text-xs md:text-sm">
-                        Defina a porcentagem de desconto promocional exibida nos produtos e selecione os itens que receberão o selo.
-                      </p>
-                    </div>
+              <Suspense fallback={<TabLoadingSkeleton label="os Cupons e Promoções" />}>
+                <CouponsTab 
+                  coupons={coupons}
+                  products={products}
+                  discountSettingsForm={discountSettingsForm}
+                  setDiscountSettingsForm={setDiscountSettingsForm}
+                  isSavingDiscount={isSavingDiscount}
+                  handleSaveDiscountSettings={handleSaveDiscountSettings}
+                  handleToggleAllDiscountProducts={handleToggleAllDiscountProducts}
+                  handleToggleSingleDiscountProduct={handleToggleSingleDiscountProduct}
+                  discountProductFilter={discountProductFilter}
+                  setDiscountProductFilter={setDiscountProductFilter}
+                  setEditingCoupon={setEditingCoupon}
+                  setCouponForm={setCouponForm}
+                  setIsCouponModalOpen={setIsCouponModalOpen}
+                  handleDeleteCoupon={handleDeleteCoupon}
+                />
+              </Suspense>
+            )}
 
-                    <div className="flex items-center gap-3 self-end sm:self-center">
-                      <span className="text-xs font-bold text-zinc-500">
-                        {discountSettingsForm.enabled ? 'Promoção Ativa' : 'Promoção Pausada'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setDiscountSettingsForm(prev => ({ ...prev, enabled: !prev.enabled }))}
-                        className={cn(
-                          "w-14 h-8 rounded-full p-1 transition-colors relative cursor-pointer",
-                          discountSettingsForm.enabled ? "bg-emerald-600" : "bg-zinc-300"
-                        )}
-                        aria-label="Ativar ou desativar desconto"
-                      >
-                        <div className={cn(
-                          "w-6 h-6 rounded-full bg-white shadow-md transition-transform",
-                          discountSettingsForm.enabled ? "translate-x-6" : "translate-x-0"
-                        )} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Configuração da Porcentagem e Pré-visualização */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-zinc-50/80 p-5 rounded-2xl border border-zinc-200/60">
-                    <div>
-                      <label className="text-xs font-black uppercase tracking-wider text-zinc-700 block mb-2">
-                        Porcentagem de Desconto (%)
-                      </label>
-                      <div className="flex items-center gap-3">
-                        <div className="relative flex-1">
-                          <input
-                            type="number"
-                            min="1"
-                            max="99"
-                            value={discountSettingsForm.percentage}
-                            onChange={(e) => {
-                              const val = Math.max(1, Math.min(99, Number(e.target.value) || 0));
-                              setDiscountSettingsForm(prev => ({ ...prev, percentage: val }));
-                            }}
-                            className="w-full h-12 bg-white border border-zinc-300 rounded-xl px-4 text-base font-black text-zinc-900 focus:border-[#ff6900] focus:outline-none transition-colors"
-                          />
-                          <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-zinc-400 text-sm">
-                            %
-                          </span>
-                        </div>
-
-                        {/* Visual Badge Preview */}
-                        <div className="flex flex-col items-center">
-                          <span className="text-[10px] font-bold text-zinc-400 mb-1">Visual no Produto</span>
-                          <span className="px-3.5 py-1.5 rounded-xl bg-[#ff6900] text-white text-sm font-black shadow-md shadow-orange-600/30">
-                            -{discountSettingsForm.percentage}%
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Botões de atalho rápido */}
-                      <div className="flex flex-wrap items-center gap-2 mt-3">
-                        {[10, 15, 20, 25, 30, 40, 50].map((preset) => (
-                          <button
-                            key={preset}
-                            type="button"
-                            onClick={() => setDiscountSettingsForm(prev => ({ ...prev, percentage: preset }))}
-                            className={cn(
-                              "px-2.5 py-1 rounded-lg text-xs font-black border transition-all cursor-pointer",
-                              discountSettingsForm.percentage === preset
-                                ? "bg-[#ff6900] text-white border-[#ff6900]"
-                                : "bg-white text-zinc-700 border-zinc-200 hover:border-zinc-300"
-                            )}
-                          >
-                            {preset}%
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Escopo da Promoção */}
-                    <div>
-                      <label className="text-xs font-black uppercase tracking-wider text-zinc-700 block mb-2">
-                        Onde aplicar o desconto:
-                      </label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setDiscountSettingsForm(prev => ({ ...prev, applyToAll: true }))}
-                          className={cn(
-                            "p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between",
-                            discountSettingsForm.applyToAll
-                              ? "bg-orange-50/80 border-[#ff6900] ring-2 ring-orange-200"
-                              : "bg-white border-zinc-200 hover:bg-zinc-50"
-                          )}
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-black text-sm text-zinc-900">Todos os Produtos</span>
-                            {discountSettingsForm.applyToAll && <Check className="w-4 h-4 text-[#ff6900]" />}
-                          </div>
-                          <span className="text-[11px] text-zinc-500">
-                            Aplica o selo de -{discountSettingsForm.percentage}% em todos os produtos
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setDiscountSettingsForm(prev => ({ ...prev, applyToAll: false }))}
-                          className={cn(
-                            "p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between",
-                            !discountSettingsForm.applyToAll
-                              ? "bg-orange-50/80 border-[#ff6900] ring-2 ring-orange-200"
-                              : "bg-white border-zinc-200 hover:bg-zinc-50"
-                          )}
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-black text-sm text-zinc-900">Produtos Selecionados</span>
-                            {!discountSettingsForm.applyToAll && <Check className="w-4 h-4 text-[#ff6900]" />}
-                          </div>
-                          <span className="text-[11px] text-zinc-500">
-                            Escolha manualmente os produtos em promoção
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Seleção de Produtos Específicos */}
-                  {!discountSettingsForm.applyToAll && (
-                    <div className="space-y-4 pt-2">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-zinc-100/70 p-3.5 rounded-2xl">
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={handleToggleAllDiscountProducts}
-                            className="bg-white hover:bg-zinc-50 text-zinc-800 border border-zinc-300 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
-                          >
-                            {discountSettingsForm.selectedProductIds.length === products.length ? (
-                              <>
-                                <CheckSquare className="w-4 h-4 text-[#ff6900]" />
-                                <span>Desmarcar Todos</span>
-                              </>
-                            ) : (
-                              <>
-                                <Square className="w-4 h-4 text-zinc-400" />
-                                <span>Selecionar Todos</span>
-                              </>
-                            )}
-                          </button>
-
-                          <span className="text-xs font-black text-zinc-600">
-                            {discountSettingsForm.selectedProductIds.length} de {products.length} selecionados
-                          </span>
-                        </div>
-
-                        {/* Barra de Pesquisa de Produtos */}
-                        <div className="relative flex-1 sm:max-w-xs">
-                          <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                          <input
-                            type="text"
-                            placeholder="Buscar produto por nome..."
-                            value={discountProductFilter}
-                            onChange={(e) => setDiscountProductFilter(e.target.value)}
-                            className="w-full bg-white border border-zinc-200 rounded-xl pl-9 pr-3 py-1.5 text-xs text-zinc-900 focus:outline-none focus:border-[#ff6900]"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Lista / Grid de Produtos */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[380px] overflow-y-auto p-1">
-                        {products
-                          .filter(p => p.name.toLowerCase().includes(discountProductFilter.toLowerCase()) || p.category.toLowerCase().includes(discountProductFilter.toLowerCase()))
-                          .map((product) => {
-                            const isSelected = discountSettingsForm.selectedProductIds.includes(product.id);
-                            return (
-                              <div
-                                key={product.id}
-                                onClick={() => handleToggleSingleDiscountProduct(product.id)}
-                                className={cn(
-                                  "p-3 rounded-2xl border transition-all cursor-pointer flex items-center gap-3 select-none",
-                                  isSelected
-                                    ? "bg-orange-50/60 border-[#ff6900] shadow-xs"
-                                    : "bg-white border-zinc-200 hover:border-zinc-300"
-                                )}
-                              >
-                                <div className={cn(
-                                  "w-5 h-5 rounded-md flex items-center justify-center border shrink-0 transition-colors",
-                                  isSelected
-                                    ? "bg-[#ff6900] border-[#ff6900] text-white"
-                                    : "border-zinc-300 bg-white"
-                                )}>
-                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                                </div>
-
-                                <div className="w-12 h-12 rounded-xl bg-zinc-100 overflow-hidden shrink-0">
-                                  <SafeImage
-                                    src={product.images[0]}
-                                    alt={product.name}
-                                    className="w-full h-full object-contain p-1"
-                                  />
-                                </div>
-
-                                <div className="min-w-0 flex-1">
-                                  <h4 className="text-xs font-bold text-zinc-900 truncate">
-                                    {product.name}
-                                  </h4>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    <span className="text-[11px] font-black text-zinc-700">
-                                      KZ {product.price.toLocaleString('pt-AO')}
-                                    </span>
-                                    {isSelected && (
-                                      <span className="text-[10px] font-extrabold text-[#ff6900] bg-orange-100 px-1.5 py-0.2 rounded">
-                                        -{discountSettingsForm.percentage}%
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Botão de Salvar Descontos */}
-                  <div className="flex justify-end pt-3 border-t border-zinc-100">
-                    <button
-                      type="button"
-                      disabled={isSavingDiscount}
-                      onClick={handleSaveDiscountSettings}
-                      className="bg-[#ff6900] hover:bg-[#ff8500] text-white font-black text-xs uppercase tracking-wider px-6 py-3.5 rounded-2xl shadow-md shadow-orange-600/25 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                    >
-                      {isSavingDiscount ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          <span>Salvando Alterações...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Save className="w-4 h-4" />
-                          <span>Salvar Configuração de Desconto</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* =========================================================
-                    2. GESTÃO DE CUPONS DE DESCONTO
-                ========================================================== */}
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center bg-zinc-100 p-6 rounded-3xl">
-                    <div>
-                      <h3 className="font-bold text-base text-zinc-900">Cupons de Desconto Promocionais</h3>
-                      <p className="text-xs text-zinc-500 mt-0.5">Crie códigos de cupom que os clientes podem inserir no carrinho.</p>
-                    </div>
-                    <button 
-                      onClick={() => {
-                        setEditingCoupon(null);
-                        setCouponForm({ code: '', type: 'percentage', value: 0, active: true, productId: '' });
-                        setIsCouponModalOpen(true);
-                      }}
-                      className="bg-zinc-900 hover:bg-black text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Novo Cupom
-                    </button>
-                  </div>
-
-                  <div className="glass rounded-[32px] overflow-hidden bg-white border border-zinc-200">
-                    <table className="w-full text-left">
-                      <thead className="bg-zinc-50 text-xs font-bold uppercase tracking-widest text-zinc-500">
-                        <tr>
-                          <th className="px-6 py-4">Código</th>
-                          <th className="px-6 py-4">Desconto</th>
-                          <th className="px-6 py-4">Status</th>
-                          <th className="px-6 py-4">Uso</th>
-                          <th className="px-6 py-4 text-right">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100">
-                        {coupons.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="px-6 py-12 text-center text-zinc-400 font-medium">Nenhum cupom cadastrado.</td>
-                          </tr>
-                        ) : (
-                          coupons.map(coupon => (
-                            <tr key={coupon.id} className="hover:bg-zinc-50 transition-colors">
-                              <td className="px-6 py-4">
-                                <div className="font-mono font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-lg inline-block">{coupon.code}</div>
-                                {coupon.productId && (
-                                  <div className="text-[10px] text-zinc-400 mt-1 uppercase font-bold tracking-widest">
-                                    Produto: {products.find(p => p.id === coupon.productId)?.name || 'Desconhecido'}
-                                  </div>
-                                )}
-                              </td>
-                              <td className="px-6 py-4 font-bold">
-                                {coupon.type === 'percentage' ? `${(coupon.value || 0)}% OFF` : `KZ ${(coupon.value || 0).toFixed(2)}`}
-                              </td>
-                              <td className="px-6 py-4">
-                                {coupon.active ? (
-                                  <span className="text-[10px] font-bold uppercase bg-emerald-400/10 text-emerald-500 px-2 py-1 rounded-lg">Ativo</span>
-                                ) : (
-                                  <span className="text-[10px] font-bold uppercase bg-zinc-200 text-zinc-500 px-2 py-1 rounded-lg">Inativo</span>
-                                )}
-                              </td>
-                              <td className="px-6 py-4 text-sm text-zinc-500">{coupon.usageCount} vezes</td>
-                              <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                                <button 
-                                  onClick={() => {
-                                    setEditingCoupon(coupon);
-                                    setCouponForm({ 
-                                      code: coupon.code || '', 
-                                      type: coupon.type || 'percentage', 
-                                      value: coupon.value || 0, 
-                                      active: coupon.active ?? true, 
-                                      productId: coupon.productId || '' 
-                                    });
-                                    setIsCouponModalOpen(true);
-                                  }}
-                                  className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-orange-600 transition-all cursor-pointer"
-                                  title="Editar cupom"
-                                >
-                                  <Edit className="w-4 h-4" />
-                                </button>
-                                <button 
-                                  onClick={() => handleDeleteCoupon(coupon.id)}
-                                  className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-red-500 transition-all cursor-pointer"
-                                  title="Excluir cupom"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </motion.div>
+            {adminTab === 'finance' && (
+              <Suspense fallback={<TabLoadingSkeleton label="o Financeiro e Dívidas" />}>
+                <FinanceTab 
+                  debts={debts}
+                  sales={sales}
+                  customers={customers}
+                  exportToPDF={exportToPDF}
+                  setEditingDebt={setEditingDebt}
+                  setDebtForm={setDebtForm}
+                  setIsDebtModalOpen={setIsDebtModalOpen}
+                  handleDeleteDebt={handleDeleteDebt}
+                />
+              </Suspense>
             )}
 
             {adminTab === 'settings' && (
-              <motion.div 
-                key="settings"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="max-w-4xl space-y-8"
-              >
-                <div className="glass rounded-[40px] p-8 md:p-12 space-y-10 bg-white border border-zinc-200">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                    <div className="space-y-6">
-                      <h3 className="text-lg font-bold flex items-center gap-2">
-                        <Package className="w-5 h-5 text-orange-500" />
-                        Identidade Visual
-                      </h3>
-                      
-                      <div className="space-y-4">
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest block">URL do Logotipo</label>
-                            <button
-                              type="button"
-                              onClick={() => setSettingsForm({ ...settingsForm, logoUrl: '/icon-512.png' })}
-                              className="text-xs font-bold text-[#ff6900] hover:text-[#ff8500] flex items-center gap-1 cursor-pointer bg-orange-50 px-2.5 py-1 rounded-lg border border-orange-200 transition-all hover:scale-105 active:scale-95"
-                              title="Usar o logótipo oficial de alta resolução PDA Comercial"
-                            >
-                              <span>✨ Inserir Logótipo Oficial (/icon-512.png)</span>
-                            </button>
-                          </div>
-                          <input 
-                            type="text" 
-                            placeholder="/icon-512.png"
-                            value={settingsForm.logoUrl ?? '/icon-512.png'}
-                            onChange={e => setSettingsForm({...settingsForm, logoUrl: e.target.value})}
-                            className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-6 py-4 focus:outline-none focus:border-orange-500 transition-all font-mono text-xs"
-                          />
-                          <p className="text-[10px] text-zinc-400 mt-2">Logótipo oficial de alta resolução da PDA Comercial.</p>
-                        </div>
-
-                        <div className="pt-4">
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4 block">Prévia do Logotipo</label>
-                          <div className="w-32 h-32 rounded-2xl border-2 border-dashed border-zinc-200 flex items-center justify-center overflow-hidden bg-white p-2 shadow-sm">
-                            <SafeImage 
-                              src={(settingsForm.logoUrl && settingsForm.logoUrl !== '/pda-logo.svg') ? settingsForm.logoUrl : '/icon-512.png'} 
-                              className="w-full h-full object-contain p-1" 
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-6">
-                      <h3 className="text-lg font-bold flex items-center gap-2">
-                        <Edit className="w-5 h-5 text-orange-500" />
-                        Informações da Loja
-                      </h3>
-                      
-                      <div className="space-y-4">
-                        <div>
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">Nome da Loja</label>
-                          <input 
-                            type="text" 
-                            value={settingsForm.storeName || ''}
-                            onChange={e => setSettingsForm({...settingsForm, storeName: e.target.value})}
-                            className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-6 py-4 focus:outline-none focus:border-orange-500 transition-all"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">Slogan / Descrição Curta</label>
-                          <textarea 
-                            value={settingsForm.storeDescription || ''}
-                            onChange={e => setSettingsForm({...settingsForm, storeDescription: e.target.value})}
-                            className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-6 py-4 focus:outline-none focus:border-orange-500 transition-all h-32 resize-none"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">WhatsApp para Notificações</label>
-                          <div className="relative">
-                            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                            <input 
-                              type="text" 
-                              placeholder="Ex: 244921000000"
-                              value={settingsForm.whatsappNumber || ''}
-                              onChange={e => setSettingsForm({...settingsForm, whatsappNumber: e.target.value})}
-                              className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl pl-12 pr-6 py-4 focus:outline-none focus:border-orange-500 transition-all font-mono"
-                            />
-                          </div>
-                          <p className="text-[9px] text-zinc-400 mt-2">DICA: Insira com código do país (Angola: 244) sem o sinal +</p>
-                        </div>
-
-                        <div>
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">E-mail para Notificações</label>
-                          <div className="relative">
-                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                            <input 
-                              type="email" 
-                              placeholder="seuemail@exemplo.com"
-                              value={settingsForm.emailForNotifications || ''}
-                              onChange={e => setSettingsForm({...settingsForm, emailForNotifications: e.target.value})}
-                              className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl pl-12 pr-6 py-4 focus:outline-none focus:border-orange-500 transition-all"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-10 border-t border-zinc-100">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-8">
-                      <h3 className="text-lg font-bold flex items-center gap-2">
-                        <Filter className="w-5 h-5 text-orange-500" />
-                        Personalização de Cores da Loja
-                      </h3>
-                      <span className="text-xs text-zinc-500">
-                        Cor do Preço definida por defeito no <strong className="text-[#ff6900]">Laranja da PDA</strong>
-                      </span>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      {/* Cor do Preço - Em Laranja da PDA por defeito */}
-                      <div className="p-6 bg-zinc-50 rounded-[32px] border border-zinc-100 flex flex-col justify-between">
-                        <div className="flex items-center gap-6 mb-3">
-                          <div className="relative">
-                            <input 
-                              type="color" 
-                              value={settingsForm.priceColor || '#ff6900'}
-                              onChange={e => setSettingsForm({...settingsForm, priceColor: e.target.value})}
-                              className="w-16 h-16 rounded-2xl cursor-pointer border-none p-0 overflow-hidden shadow-sm"
-                            />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <label className="text-xs font-bold text-zinc-700 uppercase tracking-widest block">Cor do Preço</label>
-                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-orange-100 text-[#ff6900] border border-orange-200">Laranja PDA</span>
-                            </div>
-                            <span className="font-mono text-sm font-bold block mt-0.5" style={{ color: settingsForm.priceColor || '#ff6900' }}>
-                              {(settingsForm.priceColor || '#ff6900').toUpperCase()}
-                            </span>
-                            <span className="text-[10px] text-zinc-400">Preço em KZ nos cards, destaques e carrinho</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-zinc-200/60">
-                          <span className="text-[10px] text-zinc-400 font-bold uppercase mr-1">Presets:</span>
-                          {[
-                            { name: 'Laranja PDA Oficial', color: '#ff6900' },
-                            { name: 'Laranja Vibrante', color: '#ff5a00' },
-                            { name: 'Azul PDA', color: '#062b5c' },
-                            { name: 'Verde Esmeralda', color: '#059669' },
-                            { name: 'Preto Ônix', color: '#09090b' },
-                            { name: 'Dourado', color: '#d97706' }
-                          ].map(preset => (
-                            <button
-                              key={preset.name}
-                              type="button"
-                              onClick={() => setSettingsForm({ ...settingsForm, priceColor: preset.color })}
-                              className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                              style={{ borderColor: preset.color, color: preset.color }}
-                            >
-                              {preset.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Cor do Cabeçalho (Header / Barra Superior) */}
-                      <div className="p-6 bg-zinc-50 rounded-[32px] border border-zinc-100 flex flex-col justify-between">
-                        <div className="flex items-center gap-6 mb-3">
-                          <div className="relative">
-                            <input 
-                              type="color" 
-                              value={settingsForm.headerColor || '#062b5c'}
-                              onChange={e => setSettingsForm({...settingsForm, headerColor: e.target.value})}
-                              className="w-16 h-16 rounded-2xl cursor-pointer border-none p-0 overflow-hidden shadow-sm"
-                            />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <label className="text-xs font-bold text-zinc-700 uppercase tracking-widest block">Barra Superior (Cabeçalho)</label>
-                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-100 text-[#062b5c] border border-blue-200">Azul PDA</span>
-                            </div>
-                            <span className="font-mono text-sm font-bold block mt-0.5">{(settingsForm.headerColor || '#062b5c').toUpperCase()}</span>
-                            <span className="text-[10px] text-zinc-400">Barra superior com logótipo e busca (-20% compacta)</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-zinc-200/60">
-                          <span className="text-[10px] text-zinc-400 font-bold uppercase mr-1">Presets:</span>
-                          {[
-                            { name: 'Azul PDA', color: '#062b5c' },
-                            { name: 'Azul Noturno', color: '#031d40' },
-                            { name: 'Azul Real', color: '#0f2b59' },
-                            { name: 'Preto Ônix', color: '#09090b' },
-                            { name: 'Laranja PDA', color: '#ff6900' }
-                          ].map(preset => (
-                            <button
-                              key={preset.name}
-                              type="button"
-                              onClick={() => setSettingsForm({ ...settingsForm, headerColor: preset.color })}
-                              className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                              style={{ borderColor: preset.color, color: preset.color }}
-                            >
-                              {preset.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Cor Primária dos Botões de Ação */}
-                      <div className="p-6 bg-zinc-50 rounded-[32px] border border-zinc-100 flex flex-col justify-between">
-                        <div className="flex items-center gap-6 mb-3">
-                          <div className="relative">
-                            <input 
-                              type="color" 
-                              value={settingsForm.primaryColor || '#ff6900'}
-                              onChange={e => setSettingsForm({...settingsForm, primaryColor: e.target.value})}
-                              className="w-16 h-16 rounded-2xl cursor-pointer border-none p-0 overflow-hidden shadow-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs font-bold text-zinc-700 uppercase tracking-widest mb-1 block">Botões de Ação (Comprar / Adicionar)</label>
-                            <span className="font-mono text-sm font-bold">{(settingsForm.primaryColor || '#ff6900').toUpperCase()}</span>
-                            <span className="text-[10px] text-zinc-400 block">Botão +, finalizar compra e confirmações</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-zinc-200/60">
-                          <span className="text-[10px] text-zinc-400 font-bold uppercase mr-1">Presets:</span>
-                          {[
-                            { name: 'Laranja PDA', color: '#ff6900' },
-                            { name: 'Laranja Queimado', color: '#ea580c' },
-                            { name: 'Azul PDA', color: '#062b5c' },
-                            { name: 'Verde', color: '#10b981' },
-                            { name: 'Preto', color: '#09090b' }
-                          ].map(preset => (
-                            <button
-                              key={preset.name}
-                              type="button"
-                              onClick={() => setSettingsForm({ ...settingsForm, primaryColor: preset.color })}
-                              className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                              style={{ borderColor: preset.color, color: preset.color }}
-                            >
-                              {preset.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Cor de Destaque (Badges & Tags) */}
-                      <div className="p-6 bg-zinc-50 rounded-[32px] border border-zinc-100 flex flex-col justify-between">
-                        <div className="flex items-center gap-6 mb-3">
-                          <div className="relative">
-                            <input 
-                              type="color" 
-                              value={settingsForm.accentColor || '#ff8500'}
-                              onChange={e => setSettingsForm({...settingsForm, accentColor: e.target.value})}
-                              className="w-16 h-16 rounded-2xl cursor-pointer border-none p-0 overflow-hidden shadow-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs font-bold text-zinc-700 uppercase tracking-widest mb-1 block">Destaques & Badges Promocionais</label>
-                            <span className="font-mono text-sm font-bold">{(settingsForm.accentColor || '#ff8500').toUpperCase()}</span>
-                            <span className="text-[10px] text-zinc-400 block">Badges de categoria, tags e realces</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-zinc-200/60">
-                          <span className="text-[10px] text-zinc-400 font-bold uppercase mr-1">Presets:</span>
-                          {[
-                            { name: 'Laranja Claro', color: '#ff8500' },
-                            { name: 'Âmbar', color: '#f59e0b' },
-                            { name: 'Azul Céu', color: '#0284c7' },
-                            { name: 'Esmeralda', color: '#34d399' }
-                          ].map(preset => (
-                            <button
-                              key={preset.name}
-                              type="button"
-                              onClick={() => setSettingsForm({ ...settingsForm, accentColor: preset.color })}
-                              className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                              style={{ borderColor: preset.color, color: preset.color }}
-                            >
-                              {preset.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Cor de Fundo da Loja */}
-                      <div className="p-6 bg-zinc-50 rounded-[32px] border border-zinc-100 flex flex-col justify-between">
-                        <div className="flex items-center gap-6 mb-3">
-                          <div className="relative">
-                            <input 
-                              type="color" 
-                              value={settingsForm.backgroundColor || '#f5f7fb'}
-                              onChange={e => setSettingsForm({
-                                ...settingsForm, 
-                                backgroundColor: e.target.value
-                              })}
-                              className="w-16 h-16 rounded-2xl cursor-pointer border-none p-0 overflow-hidden shadow-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs font-bold text-zinc-700 uppercase tracking-widest mb-1 block">Cor de Fundo da Loja</label>
-                            <span className="font-mono text-sm font-bold">{(settingsForm.backgroundColor || '#f5f7fb').toUpperCase()}</span>
-                            <span className="text-[10px] text-zinc-400 block">Fundo geral da página e catálogo</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-zinc-200/60">
-                          <span className="text-[10px] text-zinc-400 font-bold uppercase mr-1">Presets:</span>
-                          {[
-                            { name: 'Fundo PDA', color: '#f5f7fb' },
-                            { name: 'Branco Puro', color: '#ffffff' },
-                            { name: 'Cinza Suave', color: '#f8fafc' },
-                            { name: 'Cinza Gelo', color: '#f1f5f9' },
-                            { name: 'Creme', color: '#fafaf9' }
-                          ].map(preset => (
-                            <button
-                              key={preset.name}
-                              type="button"
-                              onClick={() => setSettingsForm({ ...settingsForm, backgroundColor: preset.color })}
-                              className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                              style={{ borderColor: preset.color, color: preset.color === '#ffffff' ? '#64748b' : preset.color }}
-                            >
-                              {preset.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Cor dos Textos e Títulos */}
-                      <div className="p-6 bg-zinc-50 rounded-[32px] border border-zinc-100 flex flex-col justify-between">
-                        <div className="flex items-center gap-6 mb-3">
-                          <div className="relative">
-                            <input 
-                              type="color" 
-                              value={settingsForm.textColor || '#142238'}
-                              onChange={e => setSettingsForm({
-                                ...settingsForm, 
-                                textColor: e.target.value
-                              })}
-                              className="w-16 h-16 rounded-2xl cursor-pointer border-none p-0 overflow-hidden shadow-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs font-bold text-zinc-700 uppercase tracking-widest mb-1 block">Cor dos Textos e Títulos</label>
-                            <span className="font-mono text-sm font-bold">{(settingsForm.textColor || '#142238').toUpperCase()}</span>
-                            <span className="text-[10px] text-zinc-400 block">Títulos de produtos, seções e categorias</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-zinc-200/60">
-                          <span className="text-[10px] text-zinc-400 font-bold uppercase mr-1">Presets:</span>
-                          {[
-                            { name: 'Azul Escuro PDA', color: '#142238' },
-                            { name: 'Preto Puro', color: '#09090b' },
-                            { name: 'Grafite', color: '#1e293b' },
-                            { name: 'Azul Meia-Noite', color: '#0f172a' }
-                          ].map(preset => (
-                            <button
-                              key={preset.name}
-                              type="button"
-                              onClick={() => setSettingsForm({ ...settingsForm, textColor: preset.color })}
-                              className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                              style={{ borderColor: preset.color, color: preset.color }}
-                            >
-                              {preset.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Cor da Barra de Pesquisa */}
-                      <div className="p-6 bg-zinc-50 rounded-[32px] border border-zinc-100 flex flex-col justify-between">
-                        <div className="flex items-center gap-6 mb-3">
-                          <div className="relative">
-                            <input 
-                              type="color" 
-                              value={settingsForm.searchBarColor || '#ffffff'}
-                              onChange={e => setSettingsForm({
-                                ...settingsForm, 
-                                searchBarColor: e.target.value,
-                                searchBorderColor: e.target.value
-                              })}
-                              className="w-16 h-16 rounded-2xl cursor-pointer border-none p-0 overflow-hidden shadow-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs font-bold text-zinc-700 uppercase tracking-widest mb-1 block">Cor da Barra de Pesquisa</label>
-                            <span className="font-mono text-sm font-bold">{(settingsForm.searchBarColor || '#ffffff').toUpperCase()}</span>
-                            <span className="text-[10px] text-zinc-400 block">Fundo do campo de pesquisa no cabeçalho</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-zinc-200/60">
-                          <span className="text-[10px] text-zinc-400 font-bold uppercase mr-1">Presets:</span>
-                          {[
-                            { name: 'Branco Neve', color: '#ffffff' },
-                            { name: 'Cinza Suave', color: '#f1f5f9' },
-                            { name: 'Deep Navy', color: '#07172e' },
-                            { name: 'Azul Meia-Noite', color: '#1e3a8a' },
-                            { name: 'Preto Ônix', color: '#09090b' }
-                          ].map(preset => (
-                            <button
-                              key={preset.name}
-                              type="button"
-                              onClick={() => setSettingsForm({ 
-                                ...settingsForm, 
-                                searchBarColor: preset.color,
-                                searchBorderColor: preset.color
-                              })}
-                              className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all hover:scale-105 active:scale-95"
-                              style={{ borderColor: preset.color, color: preset.color === '#ffffff' ? '#64748b' : preset.color }}
-                            >
-                              {preset.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Cor do Banner de Ofertas */}
-                      <div className="p-6 bg-zinc-50 rounded-[32px] border border-zinc-100 flex flex-col justify-between">
-                        <div className="flex items-center gap-6 mb-3">
-                          <div className="relative">
-                            <input 
-                              type="color" 
-                              value={settingsForm.showcaseColor || '#062b5c'}
-                              onChange={e => setSettingsForm({
-                                ...settingsForm, 
-                                showcaseColor: e.target.value,
-                                showcaseBorderColor: e.target.value
-                              })}
-                              className="w-16 h-16 rounded-2xl cursor-pointer border-none p-0 overflow-hidden shadow-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs font-bold text-zinc-700 uppercase tracking-widest mb-1 block">Cor do Banner de Ofertas</label>
-                            <span className="font-mono text-sm font-bold">{(settingsForm.showcaseColor || '#062b5c').toUpperCase()}</span>
-                            <span className="text-[10px] text-zinc-400 block">Banner de ofertas especiais abaixo dos produtos</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-zinc-200/60">
-                          <span className="text-[10px] text-zinc-400 font-bold uppercase mr-1">Presets:</span>
-                          {[
-                            { name: 'Azul PDA', color: '#062b5c' },
-                            { name: 'Azul Noturno', color: '#020a17' },
-                            { name: 'Deep Navy', color: '#07172e' },
-                            { name: 'Índigo', color: '#1e1b4b' },
-                            { name: 'Laranja PDA', color: '#ff6900' }
-                          ].map(preset => (
-                            <button
-                              key={preset.name}
-                              type="button"
-                              onClick={() => setSettingsForm({ 
-                                ...settingsForm, 
-                                showcaseColor: preset.color,
-                                showcaseBorderColor: preset.color
-                              })}
-                              className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all hover:scale-105 active:scale-95"
-                              style={{ borderColor: preset.color, color: preset.color }}
-                            >
-                              {preset.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-10 border-t border-zinc-100">
-                    <h3 className="text-lg font-bold flex items-center gap-2 mb-8">
-                      <Layout className="w-5 h-5 text-orange-500" />
-                      Estilo & Tipografia
-                    </h3>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      <div>
-                        <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">Arredondamento (Border Radius)</label>
-                        <select 
-                          value={settingsForm.borderRadius}
-                          onChange={e => setSettingsForm({...settingsForm, borderRadius: e.target.value})}
-                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-6 py-4 focus:outline-none focus:border-orange-500 transition-all appearance-none"
-                        >
-                          <option value="0px">Quadrado (0px)</option>
-                          <option value="8px">Suave (8px)</option>
-                          <option value="16px">Moderno (16px)</option>
-                          <option value="24px">Arredondado (24px)</option>
-                          <option value="40px">Extra Arredondado (40px)</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">Fonte do Site</label>
-                        <select 
-                          value={settingsForm.fontFamily}
-                          onChange={e => setSettingsForm({...settingsForm, fontFamily: e.target.value})}
-                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-6 py-4 focus:outline-none focus:border-orange-500 transition-all appearance-none"
-                        >
-                          <option value="'Inter', sans-serif">Inter (Padrão)</option>
-                          <option value="'Outfit', sans-serif">Outfit (Moderno)</option>
-                          <option value="'Space Grotesk', sans-serif">Space Grotesk (Tech)</option>
-                          <option value="'JetBrains Mono', monospace">JetBrains Mono (Técnico)</option>
-                          <option value="'Playfair Display', serif">Playfair Display (Elegante)</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Configuração do Carrossel de Destaques & Legendas */}
-                  <div className="pt-10 border-t border-zinc-100">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                      <div>
-                        <h3 className="text-lg font-bold flex items-center gap-2 text-zinc-900">
-                          <Sparkles className="w-5 h-5 text-[#ff6900]" />
-                          Carrossel de Destaques & Legendas dos Anúncios
-                        </h3>
-                        <p className="text-xs text-zinc-400 mt-1">
-                          Configure a capa ("Tudo o que você precisa num só lugar!") e as legendas dos anúncios com imagens em destaque.
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newSlide: BannerSlide = {
-                            id: `slide_${Date.now()}`,
-                            tag: '✨ NOVIDADE EM DESTAQUE',
-                            title: 'Os Melhores Produtos',
-                            highlightText: 'ao melhor preço!',
-                            subtitle: 'Qualidade superior, estoque disponível e entregas rápidas na Huíla e Cunene.',
-                            buttonText: 'Ver Detalhes →',
-                            imageUrl: products[0]?.images[0] || '',
-                            productId: products[0]?.id || ''
-                          };
-                          setSettingsForm({
-                            ...settingsForm,
-                            bannerSlides: [...(settingsForm.bannerSlides || []), newSlide]
-                          });
-                        }}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer shrink-0"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>Adicionar Anúncio de Destaque</span>
-                      </button>
-                    </div>
-
-                    {/* Informação sobre a Capa (Slide 1) */}
-                    <div className="bg-orange-50/70 border border-orange-100 p-5 rounded-2xl mb-6">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xs font-black uppercase tracking-wider text-orange-700 bg-orange-100 px-2 py-0.5 rounded-md">
-                          Banner 1 (Capa Principal)
-                        </span>
-                        <span className="text-xs text-zinc-500 font-medium">Exibe o ícone 👟 no canto inferior direito</span>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
-                        <div>
-                          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">Título Fixo da Capa</label>
-                          <div className="p-3 bg-white rounded-xl border border-orange-200 text-xs font-bold text-zinc-800">
-                            Tudo o que você precisa <span className="text-[#ff6900]">num só lugar!</span>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">Legenda / Subtítulo da Capa</label>
-                          <input
-                            type="text"
-                            placeholder="Roupas • Calçados • Computadores e muito mais..."
-                            value={settingsForm.storeDescription || ''}
-                            onChange={e => setSettingsForm({ ...settingsForm, storeDescription: e.target.value })}
-                            className="w-full bg-white border border-orange-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-orange-500"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Lista de Anúncios Adicionais (com imagem do produto no canto inferior direito) */}
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black uppercase tracking-widest text-zinc-500">
-                          Banners Seguintes ({(settingsForm.bannerSlides || []).length} anúncios personalizados)
-                        </span>
-                        <span className="text-[10px] text-zinc-400">
-                          Se não adicionar nenhum anúncio personalizado, a loja exibe automaticamente os produtos em destaque do catálogo.
-                        </span>
-                      </div>
-
-                      {(!settingsForm.bannerSlides || settingsForm.bannerSlides.length === 0) ? (
-                        <div className="p-6 bg-zinc-50 rounded-2xl border border-dashed border-zinc-200 text-center">
-                          <Layers className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
-                          <p className="text-xs font-bold text-zinc-600">Modo Automático Ativo</p>
-                          <p className="text-[11px] text-zinc-400 mt-0.5">
-                            Os produtos marcados como <strong>Destaque</strong> no Catálogo de Produtos aparecerão automaticamente como slides no carrossel com suas fotos e legendas.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {settingsForm.bannerSlides.map((slide, sIdx) => (
-                            <div key={slide.id || sIdx} className="bg-zinc-50 p-5 rounded-2xl border border-zinc-200 space-y-4 relative">
-                              <div className="flex items-center justify-between border-b border-zinc-200/80 pb-3">
-                                <span className="text-xs font-bold text-orange-600">
-                                  Banner #{sIdx + 2} (Anúncio com Imagem)
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const updated = (settingsForm.bannerSlides || []).filter((_, i) => i !== sIdx);
-                                    setSettingsForm({ ...settingsForm, bannerSlides: updated });
-                                  }}
-                                  className="text-zinc-400 hover:text-red-500 p-1.5 transition-colors cursor-pointer"
-                                  title="Remover este anúncio"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                <div>
-                                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Tag / Selo</label>
-                                  <input
-                                    type="text"
-                                    value={slide.tag || ''}
-                                    placeholder="Ex: 🔥 OFERTA EXCLUSIVA"
-                                    onChange={e => {
-                                      const updated = [...(settingsForm.bannerSlides || [])];
-                                      updated[sIdx] = { ...slide, tag: e.target.value };
-                                      setSettingsForm({ ...settingsForm, bannerSlides: updated });
-                                    }}
-                                    className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Título do Anúncio</label>
-                                  <input
-                                    type="text"
-                                    value={slide.title || ''}
-                                    placeholder="Ex: Tudo o que você precisa"
-                                    onChange={e => {
-                                      const updated = [...(settingsForm.bannerSlides || [])];
-                                      updated[sIdx] = { ...slide, title: e.target.value };
-                                      setSettingsForm({ ...settingsForm, bannerSlides: updated });
-                                    }}
-                                    className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Destaque em Laranja</label>
-                                  <input
-                                    type="text"
-                                    value={slide.highlightText || ''}
-                                    placeholder="Ex: num só lugar!"
-                                    onChange={e => {
-                                      const updated = [...(settingsForm.bannerSlides || [])];
-                                      updated[sIdx] = { ...slide, highlightText: e.target.value };
-                                      setSettingsForm({ ...settingsForm, bannerSlides: updated });
-                                    }}
-                                    className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs"
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div>
-                                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Legenda / Subtítulo</label>
-                                  <textarea
-                                    rows={2}
-                                    value={slide.subtitle || ''}
-                                    placeholder="Legenda informativa do anúncio em destaque..."
-                                    onChange={e => {
-                                      const updated = [...(settingsForm.bannerSlides || [])];
-                                      updated[sIdx] = { ...slide, subtitle: e.target.value };
-                                      setSettingsForm({ ...settingsForm, bannerSlides: updated });
-                                    }}
-                                    className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs resize-none"
-                                  />
-                                </div>
-
-                                <div className="space-y-2">
-                                  <div>
-                                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Vincular a um Produto (Opcional)</label>
-                                    <select
-                                      value={slide.productId || ''}
-                                      onChange={e => {
-                                        const pId = e.target.value;
-                                        const prod = products.find(p => p.id === pId);
-                                        const updated = [...(settingsForm.bannerSlides || [])];
-                                        updated[sIdx] = { 
-                                          ...slide, 
-                                          productId: pId,
-                                          imageUrl: prod?.images[0] || slide.imageUrl || ''
-                                        };
-                                        setSettingsForm({ ...settingsForm, bannerSlides: updated });
-                                      }}
-                                      className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs"
-                                    >
-                                      <option value="">Nenhum (usar URL de imagem direta)</option>
-                                      {products.map(p => (
-                                        <option key={p.id} value={p.id}>{p.name} - KZ {p.price.toLocaleString('pt-AO')}</option>
-                                      ))}
-                                    </select>
-                                  </div>
-
-                                  <div>
-                                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">URL da Imagem no Destaque (Inferior Direito)</label>
-                                    <div className="flex gap-2">
-                                      <input
-                                        type="text"
-                                        value={slide.imageUrl || ''}
-                                        placeholder="https://exemplo.com/imagem.png"
-                                        onChange={e => {
-                                          const updated = [...(settingsForm.bannerSlides || [])];
-                                          updated[sIdx] = { ...slide, imageUrl: e.target.value };
-                                          setSettingsForm({ ...settingsForm, bannerSlides: updated });
-                                        }}
-                                        className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs"
-                                      />
-                                      {slide.imageUrl && (
-                                        <div className="w-9 h-9 rounded-lg bg-zinc-200 overflow-hidden shrink-0 border border-zinc-300">
-                                          <SafeImage src={slide.imageUrl} className="w-full h-full object-contain" />
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="pt-10 border-t border-zinc-100">
-                    <h3 className="text-lg font-bold flex items-center gap-2 mb-8">
-                      <Monitor className="w-5 h-5 text-orange-500" />
-                      Publicidade (Anúncio Popup)
-                    </h3>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                      <div className="space-y-6">
-                        <div className="bg-zinc-50 p-6 rounded-[32px] border border-zinc-100 flex items-center justify-between">
-                          <div className="flex flex-col">
-                            <span className="text-sm font-bold text-zinc-700">Ativar Painel de Vantagens</span>
-                            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">"Conheça as vantagens exclusivas..."</span>
-                          </div>
-                          <button 
-                            onClick={() => setSettingsForm({...settingsForm, showBenefitsModal: !settingsForm.showBenefitsModal})}
-                            className={cn(
-                              "relative w-12 h-6 rounded-full transition-all duration-300",
-                              settingsForm.showBenefitsModal !== false ? "bg-orange-500" : "bg-zinc-300"
-                            )}
-                          >
-                            <div className={cn(
-                              "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-300",
-                              settingsForm.showBenefitsModal !== false ? "right-1" : "left-1"
-                            )} />
-                          </button>
-                        </div>
-
-                        <div className="bg-zinc-50 p-6 rounded-[32px] border border-zinc-100 flex items-center justify-between">
-                          <div className="flex flex-col">
-                            <span className="text-sm font-bold text-zinc-700">Ativar Anúncio Popup</span>
-                            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Exibido na entrada do site</span>
-                          </div>
-                          <button 
-                            onClick={() => setSettingsForm({...settingsForm, showAd: !settingsForm.showAd})}
-                            className={cn(
-                              "relative w-12 h-6 rounded-full transition-all duration-300",
-                              settingsForm.showAd ? "bg-orange-500" : "bg-zinc-300"
-                            )}
-                          >
-                            <div className={cn(
-                              "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-300",
-                              settingsForm.showAd ? "right-1" : "left-1"
-                            )} />
-                          </button>
-                        </div>
-
-                        <div>
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">URL da Imagem do Anúncio</label>
-                          <input 
-                            type="text" 
-                            placeholder="https://exemplo.com/promo.jpg"
-                            value={settingsForm.adImageUrl || ''}
-                            onChange={e => setSettingsForm({...settingsForm, adImageUrl: e.target.value})}
-                            className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-6 py-4 focus:outline-none focus:border-orange-500 transition-all font-mono text-sm"
-                          />
-                          <p className="text-[10px] text-zinc-400 mt-2 italic">Dica: Use imagens atraentes para promoções ou avisos.</p>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4 block">Prévia do Anúncio</label>
-                        <div className="aspect-[3/4] w-full max-w-[240px] mx-auto rounded-[32px] border-2 border-dashed border-zinc-200 flex items-center justify-center overflow-hidden bg-zinc-50">
-                          {settingsForm.adImageUrl ? (
-                            <SafeImage src={settingsForm.adImageUrl} className="w-full h-full object-cover" />
-                          ) : (
-                            <ImageIcon className="w-12 h-12 text-zinc-200" />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-10 border-t border-zinc-100">
-                    <h3 className="text-lg font-bold flex items-center gap-2 mb-8">
-                      <RotateCcw className="w-5 h-5 text-orange-500" />
-                      Controle de Caixa e Métricas
-                    </h3>
-                    
-                    <div className="bg-zinc-50 p-6 rounded-[32px] border border-zinc-100 space-y-6">
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                        <div className="space-y-1">
-                          <span className="text-sm font-bold text-zinc-700 block">Zerar Vendas e Recebidos (Mês)</span>
-                          <div className="text-xs text-zinc-500 leading-relaxed">
-                            {settingsForm.salesResetDate ? (
-                              <span className="flex flex-wrap items-center gap-1.5 mt-1">
-                                Atualmente somando apenas a partir de: 
-                                <strong className="font-mono text-orange-600 bg-orange-50 px-2 py-0.5 rounded-lg text-[10px] inline-block">
-                                  {new Date(settingsForm.salesResetDate).toLocaleString('pt-PT')}
-                                </strong>
-                              </span>
-                            ) : (
-                              "Calcular o acumulado de vendas com base no mês cheio atual."
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-2.5">
-                          {settingsForm.salesResetDate && (
-                            <button
-                              onClick={() => {
-                                if (window.confirm("Deseja restaurar a contagem integral das vendas para o mês inteiro?")) {
-                                  setSettingsForm({ ...settingsForm, salesResetDate: "" });
-                                }
-                              }}
-                              className="bg-zinc-200 text-zinc-700 px-5 py-3 rounded-2xl font-bold hover:bg-zinc-300 transition-all text-xs"
-                            >
-                              Restaurar Mês Inteiro
-                            </button>
-                          )}
-                          <button
-                            onClick={() => {
-                              if (window.confirm("Tem certeza que deseja zerar os totais de vendas e recebidos do mês? Esta ação definirá a data de início da soma para o momento atual.")) {
-                                setSettingsForm({ ...settingsForm, salesResetDate: new Date().toISOString() });
-                              }
-                            }}
-                            className="bg-orange-600 text-white px-5 py-3 rounded-2xl font-bold hover:bg-orange-700 transition-all flex items-center gap-2 text-xs shadow-md shadow-orange-600/10"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            Zerar Vendas do Mês
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-10 border-t border-zinc-100 text-right">
-                    <button 
-                      onClick={handleSaveSettings}
-                      className="bg-orange-600 text-white px-10 py-5 rounded-[24px] font-bold hover:bg-orange-700 transition-all shadow-xl shadow-orange-600/20 flex items-center gap-3 ml-auto"
-                    >
-                      <Save className="w-5 h-5" />
-                      Salvar Todas as Definições
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
+              <Suspense fallback={<TabLoadingSkeleton label="as Definições da Loja" />}>
+                <SettingsTab 
+                  settingsForm={settingsForm}
+                  setSettingsForm={setSettingsForm}
+                  products={products}
+                  handleSaveSettings={handleSaveSettings}
+                />
+              </Suspense>
             )}
           </AnimatePresence>
 
-          {/* Product Modal */}
+          {/* Product Modal with Integrated Google Drive on demand */}
           <AnimatePresence>
             {isProductModalOpen && (
               <>
@@ -3067,28 +1131,63 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Tamanhos (separados por vírgula)</label>
                       <input type="text" placeholder="Ex: S, M, L" value={productForm.attributes.sizes.join(', ')} onChange={e => setProductForm({...productForm, attributes: {...productForm.attributes, sizes: e.target.value.split(',').map(s => s.trim())}})} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500" />
                     </div>
+
+                    {/* Product Images with Google Drive Button */}
                     <div>
-                      <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Imagens do Produto (URLs separadas por vírgula)</label>
-                      <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                        <label className="text-xs font-bold text-zinc-700 uppercase tracking-wide block">
+                          Imagens do Produto
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setIsDriveModalOpen(true)}
+                          className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95"
+                          title="Enviar ou selecionar fotos diretamente no Google Drive"
+                        >
+                          <svg className="w-4 h-4 shrink-0" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
+                            <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                            <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44c-.8 1.4-1.2 2.95-1.2 4.5h27.5z" fill="#00ac47"/>
+                            <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                            <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                            <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                            <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                          </svg>
+                          <span>+ Adicionar imagem (Google Drive)</span>
+                        </button>
+                      </div>
+
+                      {/* Thumbnails Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
                         {productForm.images.filter(img => img.trim() !== '').map((img, idx) => (
-                          <div key={`${img}-${idx}`} className="relative aspect-square rounded-xl overflow-hidden border border-zinc-200 bg-white">
-                            <SafeImage src={img} alt="" className="w-full h-full object-contain" />
+                          <div key={`${img}-${idx}`} className="relative aspect-square rounded-2xl overflow-hidden border border-zinc-200 bg-white group shadow-xs">
+                            <SafeImage src={img} alt="" className="w-full h-full object-contain p-1" />
                             <button 
+                              type="button"
                               onClick={() => setProductForm(prev => ({ ...prev, images: prev.images.filter((_, i) => i !== idx) }))}
-                              className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                              className="absolute top-1.5 right-1.5 p-1 bg-red-600/90 text-white rounded-full hover:bg-red-700 transition-colors shadow-sm cursor-pointer"
+                              title="Remover foto"
                             >
-                              <X className="w-3 h-3" />
+                              <X className="w-3.5 h-3.5" />
                             </button>
+                            <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md">
+                              #{idx + 1}
+                            </span>
                           </div>
                         ))}
                       </div>
-                      <input 
-                        type="text" 
-                        placeholder="https://imagem1.jpg, https://imagem2.jpg" 
-                        value={productForm.images.join(', ')} 
-                        onChange={e => setProductForm({...productForm, images: e.target.value.split(',').map(s => s.trim())})} 
-                        className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500" 
-                      />
+
+                      <div className="space-y-1">
+                        <input 
+                          type="text" 
+                          placeholder="Ou digite URLs manuais separadas por vírgula..." 
+                          value={productForm.images.join(', ')} 
+                          onChange={e => setProductForm({...productForm, images: e.target.value.split(',').map(s => s.trim())})} 
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-orange-500 font-mono" 
+                        />
+                        <p className="text-[10px] text-zinc-400">
+                          Use o botão azul do Google Drive acima para carregar fotos do telemóvel ou PC com 1 clique!
+                        </p>
+                      </div>
                     </div>
 
                     {/* Color to Image Association */}
@@ -3134,7 +1233,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                     <option value="">Sem Imagem Vinculada</option>
                                     {validImages.map((img, idx) => (
                                       <option key={idx} value={img}>
-                                        Foto {idx + 1}
+                                        Foto #{idx + 1}
                                       </option>
                                     ))}
                                   </select>
@@ -3145,15 +1244,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         </div>
                       </div>
                     )}
+
                     <div className="bg-zinc-50 p-4 rounded-2xl border border-zinc-200 flex items-center justify-between">
                       <div className="flex flex-col">
                         <span className="text-sm font-bold text-zinc-700">Destacar na Loja</span>
                         <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Exibir no carrossel do início</span>
                       </div>
                       <button 
+                        type="button"
                         onClick={() => setProductForm({...productForm, isFeatured: !productForm.isFeatured})}
                         className={cn(
-                          "relative w-12 h-6 rounded-full transition-all duration-300",
+                          "relative w-12 h-6 rounded-full transition-all duration-300 cursor-pointer",
                           productForm.isFeatured ? "bg-orange-500" : "bg-zinc-300"
                         )}
                       >
@@ -3163,15 +1264,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         )} />
                       </button>
                     </div>
+
                     <div className="flex gap-4 pt-4">
-                      <button onClick={() => setIsProductModalOpen(false)} className="flex-1 bg-zinc-100 py-4 rounded-2xl font-bold hover:bg-zinc-200 transition-all">Cancelar</button>
-                      <button onClick={handleSaveProduct} className="flex-1 bg-orange-600 text-white py-4 rounded-2xl font-bold hover:bg-orange-700 transition-all">Salvar Produto</button>
+                      <button onClick={() => setIsProductModalOpen(false)} className="flex-1 bg-zinc-100 py-4 rounded-2xl font-bold hover:bg-zinc-200 transition-all cursor-pointer">Cancelar</button>
+                      <button onClick={handleSaveProduct} className="flex-1 bg-orange-600 text-white py-4 rounded-2xl font-bold hover:bg-orange-700 transition-all cursor-pointer">Salvar Produto</button>
                     </div>
                   </div>
                 </motion.div>
               </>
             )}
           </AnimatePresence>
+
+          {/* Google Drive Modal (loaded on demand) */}
+          {isDriveModalOpen && (
+            <Suspense fallback={null}>
+              <GoogleDriveModal 
+                isOpen={isDriveModalOpen}
+                onClose={() => setIsDriveModalOpen(false)}
+                productId={editingProduct?.id}
+                productName={productForm.name || editingProduct?.name}
+                onImagesSelected={(newUrls) => {
+                  setProductForm(prev => {
+                    const currentClean = prev.images.filter(x => x.trim() !== '');
+                    return {
+                      ...prev,
+                      images: [...currentClean, ...newUrls]
+                    };
+                  });
+                }}
+              />
+            </Suspense>
+          )}
 
           {/* Debt Modal */}
           <AnimatePresence>
@@ -3252,8 +1375,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       />
                     </div>
                     <div className="flex gap-4 pt-4">
-                      <button onClick={() => setIsDebtModalOpen(false)} className="flex-1 bg-zinc-100 py-4 rounded-2xl font-bold hover:bg-zinc-200 transition-all">Cancelar</button>
-                      <button onClick={handleSaveDebt} className="flex-1 bg-orange-600 text-white py-4 rounded-2xl font-bold hover:bg-orange-700 transition-all">
+                      <button onClick={() => setIsDebtModalOpen(false)} className="flex-1 bg-zinc-100 py-4 rounded-2xl font-bold hover:bg-zinc-200 transition-all cursor-pointer">Cancelar</button>
+                      <button onClick={handleSaveDebt} className="flex-1 bg-orange-600 text-white py-4 rounded-2xl font-bold hover:bg-orange-700 transition-all cursor-pointer">
                         {editingDebt ? 'Salvar Alterações' : 'Adicionar Dívida'}
                       </button>
                     </div>
@@ -3310,8 +1433,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <div className="text-2xl font-black text-orange-600">{(Number(stockForm.Cunene) + Number(stockForm.Huíla))} unidades</div>
                     </div>
                     <div className="flex gap-4 pt-4">
-                      <button onClick={() => setIsStockModalOpen(false)} className="flex-1 bg-zinc-100 py-4 rounded-2xl font-bold hover:bg-zinc-200 transition-all">Cancelar</button>
-                      <button onClick={handleUpdateStock} className="flex-1 bg-orange-600 text-white py-4 rounded-2xl font-bold hover:bg-orange-700 transition-all">Atualizar</button>
+                      <button onClick={() => setIsStockModalOpen(false)} className="flex-1 bg-zinc-100 py-4 rounded-2xl font-bold hover:bg-zinc-200 transition-all cursor-pointer">Cancelar</button>
+                      <button onClick={handleUpdateStock} className="flex-1 bg-orange-600 text-white py-4 rounded-2xl font-bold hover:bg-orange-700 transition-all cursor-pointer">Atualizar</button>
                     </div>
                   </div>
                 </motion.div>
@@ -3357,7 +1480,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <select 
                           value={couponForm.type}
                           onChange={e => setCouponForm({...couponForm, type: e.target.value as 'percentage' | 'fixed'})}
-                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-4 focus:outline-none focus:border-orange-500 font-bold appearance-none"
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-4 focus:outline-none focus:border-orange-500 font-bold appearance-none cursor-pointer"
                         >
                           <option value="percentage">Porcentagem (%)</option>
                           <option value="fixed">Valor Fixo (KZ)</option>
@@ -3385,7 +1508,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <select 
                         value={couponForm.productId || ''}
                         onChange={e => setCouponForm({...couponForm, productId: e.target.value})}
-                        className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-4 focus:outline-none focus:border-orange-500 font-bold appearance-none"
+                        className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-4 focus:outline-none focus:border-orange-500 font-bold appearance-none cursor-pointer"
                       >
                         <option value="">Aplicar em todo o Carrinho</option>
                         {products.map(p => (
@@ -3397,9 +1520,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
                       <span className="text-sm font-bold text-zinc-600 uppercase tracking-widest">Status do Cupom</span>
                       <button 
+                        type="button"
                         onClick={() => setCouponForm({...couponForm, active: !couponForm.active})}
                         className={cn(
-                          "relative w-14 h-8 rounded-full transition-all duration-300",
+                          "relative w-14 h-8 rounded-full transition-all duration-300 cursor-pointer",
                           couponForm.active ? "bg-emerald-500" : "bg-zinc-300"
                         )}
                       >
@@ -3411,11 +1535,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
 
                     <div className="flex gap-4 pt-4">
-                      <button onClick={() => setIsCouponModalOpen(false)} className="flex-1 bg-zinc-100 py-4 rounded-2xl font-bold hover:bg-zinc-200 transition-all">Cancelar</button>
+                      <button onClick={() => setIsCouponModalOpen(false)} className="flex-1 bg-zinc-100 py-4 rounded-2xl font-bold hover:bg-zinc-200 transition-all cursor-pointer">Cancelar</button>
                       <button 
                         onClick={handleSaveCoupon}
                         disabled={!couponForm.code || couponForm.value <= 0}
-                        className="flex-1 bg-orange-600 text-white py-4 rounded-2xl font-bold transition-all hover:scale-[1.02] disabled:opacity-50 disabled:scale-100 shadow-xl shadow-orange-600/20"
+                        className="flex-1 bg-orange-600 text-white py-4 rounded-2xl font-bold transition-all hover:scale-[1.02] disabled:opacity-50 disabled:scale-100 shadow-xl shadow-orange-600/20 cursor-pointer"
                       >
                         Salvar Cupom
                       </button>
