@@ -1286,3 +1286,66 @@
 
 
 
+
+
+/* =====================================================
+   PDA COMERCIAL — TEMA VISUAL DO PAINEL ADMINISTRATIVO
+   Apenas apresentação: não altera regras de negócio.
+===================================================== */
+.pda-admin-theme {
+  --pda-blue: #062b5c;
+  --pda-blue-dark: #031d40;
+  --pda-orange: #ff6900;
+  --pda-orange-light: #ff8500;
+  --pda-bg: #f5f7fb;
+  --pda-text: #132238;
+  --pda-muted: #738096;
+  --pda-border: #e5eaf0;
+  --pda-shadow: 0 10px 30px rgba(5,34,70,.07);
+  background: var(--pda-bg);
+  color: var(--pda-text);
+}
+.pda-admin-theme main { background: var(--pda-bg); }
+.pda-admin-theme .bg-white { background-color: #fff; }
+.pda-admin-theme .bg-zinc-50 { background-color: #f5f7fb; }
+.pda-admin-theme .bg-zinc-100 { background-color: #eef2f6; }
+.pda-admin-theme .hover\:bg-zinc-50:hover { background-color: #f7f9fc; }
+.pda-admin-theme .hover\:bg-zinc-100:hover { background-color: #eef2f6; }
+.pda-admin-theme .border-zinc-200,
+.pda-admin-theme .border-zinc-100 { border-color: var(--pda-border); }
+.pda-admin-theme .text-zinc-900 { color: var(--pda-text); }
+.pda-admin-theme .text-zinc-700 { color: #24364d; }
+.pda-admin-theme .text-zinc-600,
+.pda-admin-theme .text-zinc-500 { color: var(--pda-muted); }
+.pda-admin-theme .text-zinc-400 { color: #96a1b1; }
+.pda-admin-theme .bg-orange-600 { background-color: var(--pda-orange); }
+.pda-admin-theme .hover\:bg-orange-700:hover { background-color: #e95d00; }
+.pda-admin-theme .text-orange-600 { color: var(--pda-orange); }
+.pda-admin-theme .text-orange-700 { color: #e95d00; }
+.pda-admin-theme .border-orange-200 { border-color: #ffd6bf; }
+.pda-admin-theme .bg-orange-50 { background-color: #fff4ed; }
+.pda-admin-theme .bg-orange-50\/30 { background-color: rgba(255,105,0,.06); }
+.pda-admin-theme .shadow-orange-600\/20 { --tw-shadow-color: rgba(255,105,0,.20); }
+.pda-admin-theme input:focus,
+.pda-admin-theme textarea:focus,
+.pda-admin-theme select:focus { border-color: var(--pda-orange); box-shadow: 0 0 0 3px rgba(255,105,0,.10); }
+.pda-admin-theme .glass {
+  box-shadow: var(--pda-shadow);
+}
+.pda-admin-theme .rounded-3xl,
+.pda-admin-theme .rounded-\[32px\],
+.pda-admin-theme .rounded-\[40px\] {
+  border-color: var(--pda-border);
+}
+.pda-admin-theme button { -webkit-tap-highlight-color: transparent; }
+.pda-admin-theme .bg-primary { background-color: var(--pda-orange); }
+.pda-admin-theme .text-primary { color: var(--pda-orange); }
+.pda-admin-theme .border-primary { border-color: var(--pda-orange); }
+
+@media (max-width: 1023px) {
+  .pda-admin-theme main > div { padding-top: 1rem; }
+}
+@media (max-width: 640px) {
+  .pda-admin-theme .p-8 { padding: 1.125rem; }
+  .pda-admin-theme .rounded-\[40px\] { border-radius: 1.5rem; }
+}
