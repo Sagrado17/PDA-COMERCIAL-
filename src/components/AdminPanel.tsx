@@ -27,7 +27,10 @@ import {
   CheckCircle2, 
   ArrowLeft,
   UploadCloud,
-  Tag
+  Tag,
+  Store,
+  Zap,
+  ChevronRight
 } from 'lucide-react';
 
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
@@ -674,7 +677,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   ];
 
   return (
-    <div className="pda-admin-theme flex min-h-screen bg-zinc-50 text-zinc-900">
+    <div className="flex min-h-screen bg-zinc-50 text-zinc-900">
       {/* Sidebar Mobile Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -691,12 +694,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
       {/* Admin Sidebar */}
       <div className={cn(
-        "fixed inset-y-0 left-0 z-50 w-64 border-r border-white/10 h-screen flex flex-col p-6 bg-[#031d40] text-white transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0",
+        "pda-admin-sidebar fixed inset-y-0 left-0 z-50 w-72 h-screen flex flex-col transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0",
         !isSidebarOpen && "-translate-x-full"
       )}>
-        <div className="flex items-center justify-between mb-12">
+        <div className="pda-admin-brand flex items-center justify-between mb-8">
           <div className="flex items-center gap-2">
-            <div className="w-11 h-11 rounded-2xl overflow-hidden shadow-lg border border-white/15 bg-white p-1">
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm border border-zinc-200 bg-white p-0.5">
               <SafeImage 
                 src={(settings.logoUrl && settings.logoUrl !== '/pda-logo.svg') ? settings.logoUrl : '/icon-512.png'} 
                 className="w-full h-full object-contain bg-white" 
@@ -704,23 +707,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               />
             </div>
             <div className="flex flex-col">
-              <span className="font-display text-lg font-bold tracking-tight uppercase text-white leading-tight">
+              <span className="font-display text-lg font-bold tracking-tight uppercase text-zinc-900 leading-tight">
                 {settings.storeName.split(' ').map((word, i) => (
                   <span key={i} className={i === settings.storeName.split(' ').length - 1 ? "text-primary" : ""}>
                     {word}{' '}
                   </span>
                 ))}
               </span>
-              <span className="text-[9px] text-white/55 font-medium">{settings.storeDescription}</span>
+              <span className="text-[9px] text-zinc-500 font-medium">{settings.storeDescription}</span>
             </div>
           </div>
-          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 hover:bg-white/10 rounded-lg text-white">
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 hover:bg-zinc-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <nav className="flex-1 space-y-2">
-          {menuItems.map((item) => {
+        <div className="pda-admin-section-label">MENU PRINCIPAL</div>
+        <nav className="flex-1 space-y-1">
+          {menuItems.slice(0, 5).map((item) => {
             const isReservations = item.id === 'reservations';
             const shouldBlink = isReservations && pendingReservationsCount > 0;
             return (
@@ -734,10 +738,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 className={cn(
                   "w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-all cursor-pointer",
                   adminTab === item.id 
-                    ? "bg-[#ff6900] text-white shadow-lg shadow-orange-950/25" 
+                    ? "bg-primary text-white shadow-lg" 
                     : shouldBlink
                       ? "bg-amber-50 text-amber-900 border border-amber-300 shadow-sm animate-blink"
-                      : "text-white/65 hover:text-white hover:bg-white/10"
+                      : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
                 )}
                 style={adminTab === item.id ? { boxShadow: `0 10px 15px -3px ${settings.primaryColor}33` } : {}}
               >
@@ -757,8 +761,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             );
           })}
         </nav>
+        <div className="pda-admin-section-label mt-5">GESTÃO</div>
+        <nav className="space-y-1">
+          {menuItems.slice(5).map((item) => {
+            const shouldBlink = item.id === 'reservations' && pendingReservationsCount > 0;
+            return (
+              <button key={item.id} onClick={() => { setAdminTab(item.id); setIsSidebarOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                className={cn("pda-admin-nav-item w-full flex items-center justify-between", adminTab === item.id ? "active" : "", shouldBlink && "attention")}>
+                <span className="flex items-center gap-3"><item.icon className="w-5 h-5"/><span>{item.label}</span></span>
+                <ChevronRight className="w-4 h-4 opacity-40"/>
+              </button>
+            );
+          })}
+        </nav>
 
-        <div className="pt-6 border-t border-white/10">
+        <div className="pda-admin-store-card">
+          <div className="flex items-center gap-2"><Store className="w-4 h-4"/><span>Loja online</span><span className="pda-online-dot"/></div>
+          <button onClick={onBackToStore}>Ver loja <ArrowLeft className="w-3.5 h-3.5 rotate-180"/></button>
+        </div>
+        <div className="pt-4 border-t border-white/10">
           <div 
             onClick={() => {
               if (window.confirm('Deseja encerrar a sessão?')) {
@@ -767,12 +788,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             }}
             className="flex items-center gap-3 mb-4 cursor-pointer hover:bg-zinc-50 p-2 rounded-2xl transition-all active:scale-95 group"
           >
-            <div className="w-10 h-10 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-white font-bold group-hover:bg-red-500/15 group-hover:text-red-300 transition-colors">
+            <div className="w-10 h-10 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-600 font-bold group-hover:bg-red-50 group-hover:text-red-600 transition-colors">
               P
             </div>
             <div>
-              <div className="text-xs font-bold text-white group-hover:text-red-300 transition-colors">PDA Admin</div>
-              <div className="text-[10px] text-white/50">Terminar Sessão</div>
+              <div className="text-xs font-bold text-zinc-900 group-hover:text-red-600 transition-colors">PDA Admin</div>
+              <div className="text-[10px] text-zinc-500">Terminar Sessão</div>
             </div>
           </div>
         </div>
