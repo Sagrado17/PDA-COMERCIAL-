@@ -1287,14 +1287,9 @@
 
 
 
-/* PDA ADMIN — nova estrutura visual (funções preservadas) */
-.pda-admin-sidebar{background:linear-gradient(180deg,#031d40 0%,#062b5c 72%,#041f43 100%);color:#fff;padding:22px 16px;box-shadow:14px 0 35px rgba(3,29,64,.12)}
-.pda-admin-brand{padding:4px 8px 18px;border-bottom:1px solid rgba(255,255,255,.10)}
-.pda-admin-brand .text-zinc-900{color:#fff!important}.pda-admin-brand .text-zinc-500{color:#b7c7db!important}
-.pda-admin-section-label{font-size:9px;font-weight:900;letter-spacing:.14em;color:#8fa5c2;padding:10px 10px 7px}
-.pda-admin-nav-item{min-height:45px;padding:10px 12px;border-radius:13px;color:#b9c8da;font-size:13px;font-weight:700;transition:.2s}
-.pda-admin-nav-item:hover{background:rgba(255,255,255,.08);color:#fff}.pda-admin-nav-item.active{background:#ff6900;color:#fff;box-shadow:0 9px 22px rgba(255,105,0,.24)}.pda-admin-nav-item.attention{color:#ffd18b;background:rgba(255,169,0,.10)}
-.pda-admin-store-card{margin-top:18px;padding:13px;border-radius:16px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.09);font-size:11px;color:#d7e1ef}.pda-admin-store-card>div{font-weight:800}.pda-admin-store-card button{margin-top:9px;border:0;background:transparent;color:#ff9b61;font-size:11px;font-weight:800;display:flex;align-items:center;gap:5px;padding:0;cursor:pointer}.pda-online-dot{width:7px;height:7px;border-radius:50%;background:#19a463;box-shadow:0 0 0 4px rgba(25,164,99,.12)}
-.pda-quick-actions{background:linear-gradient(135deg,#fff 0%,#f9fbff 100%);border:1px solid #e7ebf1;border-radius:22px;padding:20px;box-shadow:0 10px 30px rgba(5,34,70,.06)}.pda-eyebrow{display:inline-flex;align-items:center;gap:5px;color:#ff6900;font-size:9px;font-weight:900;letter-spacing:.12em}.pda-quick-actions h2{margin:5px 0 2px;font-size:18px;font-weight:900;color:#132238}.pda-quick-actions p{margin:0;color:#738096;font-size:12px}.pda-quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:16px}.pda-quick-grid button{border:1px solid #e7ebf1;background:#fff;border-radius:16px;padding:13px;display:flex;align-items:center;gap:10px;text-align:left;cursor:pointer;color:#062b5c;transition:.2s}.pda-quick-grid button:hover{border-color:#ffb080;transform:translateY(-2px);box-shadow:0 8px 20px rgba(5,34,70,.07)}.pda-quick-grid button>svg:first-child{width:19px;height:19px;color:#ff6900}.pda-quick-grid button>svg:last-child{margin-left:auto;width:15px;color:#9aa7b8}.pda-quick-grid b{display:block;font-size:12px}.pda-quick-grid small{display:block;color:#738096;font-size:10px;margin-top:2px}
-@media(max-width:900px){.pda-quick-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:560px){.pda-quick-grid{grid-template-columns:1fr}.pda-quick-actions{padding:16px}.pda-admin-sidebar{width:290px}}
+/* PDA COMERCIAL — camada visual exclusiva do painel administrativo */
+.admin-panel-shell { background: #f5f6f8; }
+.admin-panel-scroll::-webkit-scrollbar { width: 8px; }
+.admin-panel-scroll::-webkit-scrollbar-track { background: transparent; }
+.admin-panel-scroll::-webkit-scrollbar-thumb { background: #d7dce3; border-radius: 999px; }
+.admin-panel-scroll::-webkit-scrollbar-thumb:hover { background: #bcc4cf; }
