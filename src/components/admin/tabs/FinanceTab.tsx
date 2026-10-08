@@ -1,10 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { DollarSign, Plus, Edit, Trash2 } from 'lucide-react';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../../../firebase';
+import { DollarSign, ArrowDownLeft, ArrowUpRight, FileText } from 'lucide-react';
 import { Debt, Sale, Customer } from '../../../types';
-import { safeFormatDate } from '../../SafeImage';
 
 interface FinanceTabProps {
   debts: Debt[];
@@ -17,138 +14,25 @@ interface FinanceTabProps {
   handleDeleteDebt: (id: string) => void;
 }
 
-export const FinanceTab: React.FC<FinanceTabProps> = ({
-  debts,
-  sales,
-  customers,
-  exportToPDF,
-  setEditingDebt,
-  setDebtForm,
-  setIsDebtModalOpen,
-  handleDeleteDebt,
-}) => {
-  return (
-    <motion.div 
-      key="finance"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      className="space-y-8"
-    >
-      <div className="grid md:grid-cols-3 gap-6">
-        <div className="glass p-6 rounded-3xl border-red-500/20 bg-red-500/5 border">
-          <div className="text-xs font-bold text-red-400 uppercase tracking-widest mb-2">Total em Dívidas</div>
-          <div className="text-3xl font-bold">KZ {debts.reduce((acc, d) => acc + d.remainingAmount, 0).toLocaleString()}</div>
-        </div>
-        <div className="glass p-6 rounded-3xl border-emerald-500/20 bg-emerald-500/5 border">
-          <div className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-2">Recebido (Mês)</div>
-          <div className="text-3xl font-bold">KZ {sales.filter(s => s.status === 'paid').reduce((acc, s) => acc + s.paidAmount, 0).toLocaleString()}</div>
-        </div>
-        <div className="glass p-6 rounded-3xl border-orange-200 bg-orange-50/50 border">
-          <div className="text-xs font-bold text-orange-400 uppercase tracking-widest mb-2">Clientes Devedores</div>
-          <div className="text-3xl font-bold">{new Set(debts.filter(d => d.status === 'active').map(d => d.customerId)).size}</div>
-        </div>
-      </div>
+const money=(n:number)=>`KZ ${Math.round(n||0).toLocaleString('pt-AO')}`;
 
-      <div className="glass rounded-[32px] overflow-hidden bg-white border border-zinc-200">
-        <div className="p-6 border-b border-zinc-200 flex flex-col md:flex-row justify-between items-center gap-4">
-          <h3 className="font-bold">Controle de Devedores</h3>
-          <div className="flex flex-wrap gap-4">
-            <button 
-              onClick={() => exportToPDF('debts')}
-              className="text-xs font-bold text-orange-600 uppercase tracking-widest hover:text-orange-500 flex items-center gap-2 cursor-pointer"
-            >
-              <DollarSign className="w-4 h-4" />
-              Exportar Relatório
-            </button>
-            <button 
-              onClick={() => {
-                setEditingDebt(null);
-                setDebtForm({ customerName: '', customerPhone: '', amount: 0, remainingAmount: 0, dueDate: '' });
-                setIsDebtModalOpen(true);
-              }}
-              className="bg-orange-600 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-orange-700 transition-all flex items-center gap-2 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              Nova Dívida
-            </button>
-          </div>
-        </div>
-        <table className="w-full text-left">
-          <thead className="bg-zinc-50 text-xs font-bold uppercase tracking-widest text-zinc-500">
-            <tr>
-              <th className="px-6 py-4">Cliente</th>
-              <th className="px-6 py-4">Valor Original</th>
-              <th className="px-6 py-4">Saldo Devedor</th>
-              <th className="px-6 py-4">Vencimento</th>
-              <th className="px-6 py-4 text-right">Ações</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100">
-            {debts.map(debt => {
-              const customer = customers.find(c => c.id === debt.customerId);
-              return (
-                <tr key={debt.id} className="hover:bg-zinc-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="font-bold">{customer?.name}</div>
-                    <div className="text-xs text-zinc-500">{customer?.phone}</div>
-                  </td>
-                  <td className="px-6 py-4 text-sm">KZ {(debt.amount || 0).toFixed(2)}</td>
-                  <td className="px-6 py-4">
-                    <span className="text-red-400 font-bold">KZ {(debt.remainingAmount || 0).toFixed(2)}</span>
-                  </td>
-                  <td className="px-6 py-4 text-sm">
-                    {safeFormatDate(debt.dueDate, 'dd/MM/yyyy')}
-                  </td>
-                  <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                    <button 
-                      onClick={() => {
-                        setEditingDebt(debt);
-                        setDebtForm({ 
-                          customerName: customer?.name || '', 
-                          customerPhone: customer?.phone || '', 
-                          amount: debt.amount || 0, 
-                          remainingAmount: debt.remainingAmount || 0, 
-                          dueDate: debt.dueDate || '' 
-                        });
-                        setIsDebtModalOpen(true);
-                      }}
-                      className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-orange-600 transition-all cursor-pointer"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => handleDeleteDebt(debt.id)}
-                      className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-red-600 transition-all cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={async () => {
-                        if (window.confirm('Deseja baixar o pagamento total desta dívida?')) {
-                          try {
-                            await updateDoc(doc(db, 'debts', debt.id), { 
-                              remainingAmount: 0, 
-                              status: 'paid',
-                              paidAt: new Date().toISOString()
-                            });
-                          } catch (err) {
-                            handleFirestoreError(err, OperationType.UPDATE, `debts/${debt.id}`);
-                          }
-                        }
-                      }}
-                      className="bg-emerald-600/20 text-emerald-600 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-emerald-600 hover:text-white transition-all cursor-pointer"
-                    >
-                      Baixar
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </motion.div>
-  );
+export const FinanceTab: React.FC<FinanceTabProps>=({debts,sales,exportToPDF})=>{
+ const received=sales.filter(s=>s.status==='paid').reduce((a,s)=>a+(s.paidAmount||0),0)+debts.filter(d=>d.status==='paid').reduce((a,d)=>a+(d.amount||0),0);
+ const pendingSales=sales.filter(s=>s.type==='sale'&&s.status==='pending').reduce((a,s)=>a+Math.max(0,(s.totalAmount||0)-(s.paidAmount||0)),0);
+ const pendingDebt=debts.filter(d=>d.status==='active').reduce((a,d)=>a+(d.remainingAmount||0),0);
+ const movements=[...sales.filter(s=>s.status==='paid').map(s=>({id:s.id,date:new Date(s.paidAt||s.createdAt),label:`Venda ${s.id.slice(-5)}`,value:s.paidAmount||s.totalAmount,type:'in'})),...debts.filter(d=>d.status==='paid').map(d=>({id:d.id,date:new Date(d.paidAt||d.createdAt),label:'Pagamento de dívida',value:d.amount,type:'in'}))].sort((a,b)=>b.date.getTime()-a.date.getTime()).slice(0,8);
+ return <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="space-y-6">
+   <div className="flex flex-col md:flex-row md:items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-widest text-orange-600">Gestão financeira</p><h2 className="text-2xl md:text-3xl font-black">Financeiro</h2><p className="text-sm text-zinc-500 mt-1">Saldo, recebido, pendente e movimentos.</p></div><button onClick={()=>exportToPDF('sales')} className="px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-bold flex items-center gap-2"><FileText className="w-4 h-4"/> Relatório</button></div>
+   <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+     {[['Saldo operacional',money(received),'↗','text-emerald-600'],['Recebido',money(received),'✓','text-emerald-600'],['Pendente',money(pendingSales+pendingDebt),'◷','text-orange-600'],['Despesas','Sem registos','—','text-zinc-500']].map(([l,v,i,c])=><div key={l} className="bg-white rounded-2xl border border-zinc-200 p-4 md:p-5 shadow-sm"><div className={`w-9 h-9 rounded-xl bg-zinc-50 grid place-items-center font-black ${c}`}>{i}</div><b className="block mt-4 text-lg md:text-xl">{v}</b><span className="text-[10px] uppercase tracking-wider font-bold text-zinc-500">{l}</span></div>)}
+   </div>
+   <div className="grid lg:grid-cols-[1.2fr_.8fr] gap-5">
+     <div className="bg-[#062b5c] rounded-3xl p-6 md:p-7 text-white min-h-[180px] flex flex-col justify-between"><div><span className="text-xs text-blue-200 font-bold">Saldo com base nos recebimentos registados</span><div className="text-3xl md:text-4xl font-black mt-2">{money(received)}</div></div><div className="grid grid-cols-2 gap-3 text-xs"><div className="rounded-xl bg-white/10 p-3"><span className="text-blue-200 block">Vendas pagas</span><b>{money(sales.filter(s=>s.status==='paid').reduce((a,s)=>a+(s.paidAmount||0),0))}</b></div><div className="rounded-xl bg-white/10 p-3"><span className="text-blue-200 block">Dívidas pagas</span><b>{money(debts.filter(d=>d.status==='paid').reduce((a,d)=>a+(d.amount||0),0))}</b></div></div></div>
+     <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm p-6"><h3 className="font-black">A receber</h3><div className="mt-5 text-3xl font-black text-orange-600">{money(pendingSales+pendingDebt)}</div><p className="text-xs text-zinc-500 mt-2">Vendas pendentes + dívidas ativas.</p><div className="mt-5 h-2 rounded-full bg-zinc-100 overflow-hidden"><div className="h-full bg-orange-500" style={{width:`${Math.min(100,(pendingSales+pendingDebt)/Math.max(1,received+pendingSales+pendingDebt)*100)}%`}}/></div></div>
+   </div>
+   <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden"><div className="p-5 border-b border-zinc-100"><h3 className="font-black">Movimentos recentes</h3><p className="text-xs text-zinc-500 mt-1">Gerados a partir das vendas e pagamentos existentes.</p></div>
+    <div className="divide-y divide-zinc-100">{movements.length?movements.map(m=><div key={m.id} className="p-4 flex items-center justify-between gap-4"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 grid place-items-center"><ArrowDownLeft className="w-4 h-4"/></div><div><b className="text-sm">{m.label}</b><span className="block text-xs text-zinc-500">{m.date.toLocaleDateString('pt-AO')}</span></div></div><b className="text-emerald-600">+{money(m.value)}</b></div>):<div className="p-10 text-center text-sm text-zinc-400">Nenhum movimento registado.</div>}</div>
+   </div>
+ </motion.div>
 };
 export default FinanceTab;

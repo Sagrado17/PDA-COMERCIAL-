@@ -38,11 +38,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      className="max-w-4xl space-y-8"
+      className="space-y-5"
     >
-      <div className="glass rounded-[40px] p-8 md:p-12 space-y-10 bg-white border border-zinc-200">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-          <div className="space-y-6">
+      <div className="space-y-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="space-y-5">
             <h3 className="text-lg font-bold flex items-center gap-2">
               <Package className="w-5 h-5 text-orange-500" />
               Identidade Visual
@@ -83,7 +83,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             </div>
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-5">
             <h3 className="text-lg font-bold flex items-center gap-2">
               <Edit className="w-5 h-5 text-orange-500" />
               Informações da Loja
@@ -584,7 +584,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-            <div className="space-y-6">
+            <div className="space-y-5">
               <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
                 <div>
                   <span className="text-sm font-bold text-zinc-700 block">Exibir Anúncio ao Entrar</span>

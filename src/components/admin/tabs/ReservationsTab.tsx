@@ -1,9 +1,8 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Trash2, MessageSquare, MessageCircle } from 'lucide-react';
+import { Trash2, MessageSquare, MessageCircle, CalendarClock, CheckCircle2, XCircle } from 'lucide-react';
 import { Sale } from '../../../types';
 import { safeFormatDate } from '../../SafeImage';
-import { cn } from '../../../lib/utils';
 
 interface ReservationsTabProps {
   sales: Sale[];
@@ -12,140 +11,32 @@ interface ReservationsTabProps {
   handleDeleteCancelledReservation: (id: string) => void;
 }
 
-export const ReservationsTab: React.FC<ReservationsTabProps> = ({
-  sales,
-  handleClearAllCancelledReservations,
-  handleUpdateReservationStatus,
-  handleDeleteCancelledReservation,
-}) => {
-  const cancelledCount = sales.filter(s => s.type === 'reservation' && s.status === 'cancelled').length;
+const money=(n:number)=>`KZ ${Math.round(n||0).toLocaleString('pt-AO')}`;
 
-  return (
-    <motion.div 
-      key="reservations"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      className="space-y-6"
-    >
-      <div className="flex items-center justify-between gap-4 flex-wrap px-1">
-        <div>
-          <h2 className="text-xl font-black text-zinc-900">Reservas de Clientes</h2>
-          <p className="text-xs text-zinc-500">Gerencie confirmações de pagamento e cancelamentos</p>
-        </div>
-        {cancelledCount > 0 && (
-          <button
-            onClick={handleClearAllCancelledReservations}
-            className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Limpar Todas Canceladas ({cancelledCount})</span>
-          </button>
-        )}
-      </div>
-
-      <div className="glass rounded-[32px] overflow-hidden overflow-x-auto bg-white border border-zinc-200">
-        <table className="w-full text-left min-w-[800px]">
-          <thead className="bg-zinc-50 text-xs font-bold uppercase tracking-widest text-zinc-500">
-            <tr>
-              <th className="px-6 py-4">Ações</th>
-              <th className="px-6 py-4">Status</th>
-              <th className="px-6 py-4">Cliente</th>
-              <th className="px-6 py-4">Itens</th>
-              <th className="px-6 py-4">Total</th>
-              <th className="px-6 py-4">Data</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100">
-            {sales.filter(s => s.type === 'reservation').map(res => (
-              <tr key={res.id} className="hover:bg-zinc-50 transition-colors">
-                <td className="px-6 py-4 text-center">
-                  {res.status === 'pending' && (
-                    <div className="flex flex-col gap-2 min-w-[140px]">
-                      <button 
-                        onClick={() => handleUpdateReservationStatus(res.id, 'paid')}
-                        className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-emerald-700 transition-all shadow-sm whitespace-nowrap cursor-pointer"
-                      >
-                        Confirmar Pagamento
-                      </button>
-                      <button 
-                        onClick={() => handleUpdateReservationStatus(res.id, 'cancelled')}
-                        className="border border-red-200 text-red-500 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-red-50 transition-all cursor-pointer"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  )}
-                  {res.status === 'cancelled' && (
-                    <button 
-                      onClick={() => handleDeleteCancelledReservation(res.id)}
-                      className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all shadow-xs flex items-center justify-center gap-1.5 mx-auto whitespace-nowrap cursor-pointer active:scale-95"
-                      title="Apagar esta reserva cancelada do histórico permanentemente"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Apagar Histórico</span>
-                    </button>
-                  )}
-                </td>
-                <td className="px-6 py-4">
-                  <span className={cn(
-                    "text-[10px] font-bold uppercase px-2 py-1 rounded-lg",
-                    res.status === 'pending' ? "bg-orange-400/10 text-orange-400" : 
-                    res.status === 'paid' ? "bg-emerald-400/10 text-emerald-400" : "bg-red-400/10 text-red-400"
-                  )}>
-                    {res.status === 'pending' ? 'Pendente' : res.status === 'paid' ? 'Confirmada' : 'Cancelada'}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="font-bold">{res.customerName}</div>
-                  <div className="text-xs text-zinc-500">{res.customerPhone}</div>
-                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                    {res.channel === 'sms' ? (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-md">
-                        <MessageSquare className="w-2.5 h-2.5" /> SMS
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md">
-                        <MessageCircle className="w-2.5 h-2.5" /> WhatsApp
-                      </span>
-                    )}
-                    {res.customerProvince && (
-                      <span className="text-[10px] text-orange-600 font-bold uppercase">
-                        {res.customerProvince}
-                      </span>
-                    )}
-                  </div>
-                  {(res.customerNeighborhood || res.customerAddress) && (
-                    <div className="text-[10px] text-zinc-400 font-medium mt-0.5">
-                      {res.customerNeighborhood && `Bairro: ${res.customerNeighborhood}`}
-                      {res.customerAddress && ` • Ref: ${res.customerAddress}`}
-                    </div>
-                  )}
-                </td>
-                <td className="px-6 py-4 min-w-[200px]">
-                  <div className="space-y-2">
-                    {res.items.map((item, idx) => (
-                      <div key={idx} className="flex items-center justify-between gap-4 py-1.5 border-b border-zinc-50 last:border-0">
-                        <div>
-                          <div className="text-sm font-bold text-zinc-900">{item.productName}</div>
-                          <div className="flex gap-1.5 mt-0.5">
-                            <span className="text-[9px] font-bold uppercase text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded-md">{item.variation.color}</span>
-                            <span className="text-[9px] font-bold uppercase text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded-md">{item.variation.size}</span>
-                          </div>
-                        </div>
-                        <div className="text-xs font-bold text-zinc-700 bg-zinc-50 px-2 py-1 rounded-lg">x{item.quantity}</div>
-                      </div>
-                    ))}
-                  </div>
-                </td>
-                <td className="px-6 py-4 font-bold text-zinc-900">KZ {(res.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="px-6 py-4 text-sm text-zinc-500">{safeFormatDate(res.createdAt, 'dd/MM/yyyy')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </motion.div>
-  );
+export const ReservationsTab: React.FC<ReservationsTabProps>=({sales,handleClearAllCancelledReservations,handleUpdateReservationStatus,handleDeleteCancelledReservation})=>{
+ const reservations=sales.filter(s=>s.type==='reservation');
+ const pending=reservations.filter(s=>s.status==='pending').length;
+ const confirmed=reservations.filter(s=>s.status==='paid').length;
+ const cancelled=reservations.filter(s=>s.status==='cancelled').length;
+ return <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="space-y-6">
+   <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+     <div><p className="text-xs font-bold uppercase tracking-widest text-orange-600">Pedidos agendados</p><h2 className="text-2xl md:text-3xl font-black">Reservas</h2><p className="text-sm text-zinc-500 mt-1">Cada reserva num cartão, com estado, cliente, valor e ações.</p></div>
+     {cancelled>0&&<button onClick={handleClearAllCancelledReservations} className="px-4 py-2.5 rounded-xl bg-red-50 text-red-600 border border-red-100 text-xs font-bold flex items-center gap-2"><Trash2 className="w-4 h-4"/> Limpar canceladas ({cancelled})</button>}
+   </div>
+   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+     {[['Total',reservations.length,'#','text-blue-600'],['Pendentes',pending,'◷','text-orange-600'],['Confirmadas',confirmed,'✓','text-emerald-600'],['Valor reservado',money(reservations.reduce((a,s)=>a+(s.totalAmount||0),0)),'KZ','text-orange-600']].map(([l,v,i,c])=><div key={l} className="bg-white rounded-2xl border border-zinc-200 p-4 shadow-sm"><div className={`w-9 h-9 rounded-xl bg-zinc-50 grid place-items-center font-black ${c}`}>{i}</div><b className="block mt-3 text-xl">{v}</b><span className="text-[10px] uppercase tracking-wider font-bold text-zinc-500">{l}</span></div>)}
+   </div>
+   <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+    {reservations.map(res=><article key={res.id} className="bg-white rounded-3xl border border-zinc-200 shadow-sm p-5 hover:shadow-md transition-shadow">
+      <div className="flex justify-between items-start gap-3"><div><span className="text-[10px] font-black text-zinc-400">#{res.id.slice(-5)}</span><h3 className="font-black mt-1">{res.customerName||'Cliente sem nome'}</h3></div>
+      <span className={`text-[10px] font-black uppercase px-2.5 py-1.5 rounded-lg ${res.status==='pending'?'bg-orange-50 text-orange-700':res.status==='paid'?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>{res.status==='pending'?'Pendente':res.status==='paid'?'Confirmada':'Cancelada'}</span></div>
+      <div className="mt-4 grid grid-cols-2 gap-2 text-xs"><div className="bg-zinc-50 rounded-xl p-3"><span className="text-zinc-400 block mb-1">Data</span><b>{safeFormatDate(res.createdAt,'dd/MM/yyyy')}</b></div><div className="bg-zinc-50 rounded-xl p-3"><span className="text-zinc-400 block mb-1">Valor</span><b>{money(res.totalAmount)}</b></div></div>
+      <div className="mt-4 flex items-center gap-2 text-xs text-zinc-500">{res.channel==='sms'?<MessageSquare className="w-4 h-4 text-blue-600"/>:<MessageCircle className="w-4 h-4 text-emerald-600"/>}<span>{res.channel==='sms'?'SMS':'WhatsApp'} · {res.customerPhone||'Sem telefone'}</span></div>
+      <div className="mt-4 space-y-2">{res.items.slice(0,3).map((item,i)=><div key={i} className="flex justify-between text-xs border-b border-zinc-100 pb-2"><span className="font-bold truncate pr-3">{item.productName}</span><span className="text-zinc-500">×{item.quantity}</span></div>)}</div>
+      <div className="mt-5 flex gap-2">{res.status==='pending'&&<><button onClick={()=>handleUpdateReservationStatus(res.id,'paid')} className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold flex items-center justify-center gap-1"><CheckCircle2 className="w-4 h-4"/> Confirmar</button><button onClick={()=>handleUpdateReservationStatus(res.id,'cancelled')} className="px-3 py-2.5 rounded-xl bg-red-50 text-red-600 text-xs font-bold"><XCircle className="w-4 h-4"/></button></>}{res.status==='cancelled'&&<button onClick={()=>handleDeleteCancelledReservation(res.id)} className="w-full py-2.5 rounded-xl bg-red-50 text-red-600 text-xs font-bold">Apagar histórico</button>}{res.status==='paid'&&<div className="w-full text-center py-2.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold">Reserva confirmada</div>}</div>
+    </article>)}
+   </div>
+   {!reservations.length&&<div className="bg-white rounded-3xl border border-zinc-200 p-12 text-center text-sm text-zinc-400"><CalendarClock className="mx-auto mb-3 w-8 h-8"/ >Nenhuma reserva registada.</div>}
+ </motion.div>
 };
 export default ReservationsTab;
