@@ -29,7 +29,7 @@ import {
   UploadCloud,
   Tag,
   Store,
-  Zap,
+  Plus,
   ChevronRight
 } from 'lucide-react';
 
@@ -665,19 +665,89 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  const menuItems = [
-    { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  const primaryMenuItems = [
+    { id: 'dashboard', icon: LayoutDashboard, label: 'Visão geral' },
     { id: 'inventory', icon: Package, label: 'Estoque' },
     { id: 'sales', icon: ShoppingBag, label: 'Vendas' },
     { id: 'reservations', icon: Clock, label: 'Reservas' },
     { id: 'customers', icon: Users, label: 'Clientes' },
-    { id: 'coupons', icon: Tag, label: 'Cupons e Descontos' },
-    { id: 'finance', icon: DollarSign, label: 'Financeiro' },
-    { id: 'settings', icon: Settings, label: 'Definição' },
   ];
 
+  const managementMenuItems = [
+    { id: 'coupons', icon: Tag, label: 'Cupons e descontos' },
+    { id: 'finance', icon: DollarSign, label: 'Financeiro' },
+    { id: 'settings', icon: Settings, label: 'Definições' },
+  ];
+
+  const openNewProduct = () => {
+    setEditingProduct(null);
+    setProductForm({
+      name: '',
+      description: '',
+      price: 0,
+      category: '',
+      images: [''],
+      attributes: { colors: [''], sizes: ['S', 'M', 'L'] },
+      colorImages: {},
+      isFeatured: false
+    });
+    setIsProductModalOpen(true);
+    setAdminTab('inventory');
+    setIsSidebarOpen(false);
+  };
+
+  const renderNavItem = (item: typeof primaryMenuItems[number]) => {
+    const isReservations = item.id === 'reservations';
+    const shouldBlink = isReservations && pendingReservationsCount > 0;
+
+    return (
+      <button
+        key={item.id}
+        onClick={() => {
+          setAdminTab(item.id);
+          setIsSidebarOpen(false);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        className={cn(
+          "group w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold transition-all cursor-pointer border",
+          adminTab === item.id
+            ? "bg-[#062b5c] text-white border-[#062b5c] shadow-[0_10px_24px_rgba(6,43,92,.16)]"
+            : shouldBlink
+              ? "bg-amber-50 text-amber-900 border-amber-200 animate-blink"
+              : "bg-transparent text-zinc-600 border-transparent hover:bg-white hover:text-zinc-950 hover:border-zinc-200 hover:shadow-sm"
+        )}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <span className={cn(
+            "w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors",
+            adminTab === item.id
+              ? "bg-white/10 text-white"
+              : shouldBlink
+                ? "bg-amber-100 text-amber-700"
+                : "bg-zinc-100 text-zinc-500 group-hover:bg-zinc-200 group-hover:text-zinc-900"
+          )}>
+            <item.icon className={cn("w-[18px] h-[18px]", shouldBlink && "animate-pulse")} />
+          </span>
+          <span className={cn("truncate", shouldBlink && "font-bold")}>{item.label}</span>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {shouldBlink && (
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+              <span className="text-[10px] font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">
+                {pendingReservationsCount}
+              </span>
+            </span>
+          )}
+          {adminTab === item.id && <ChevronRight className="w-4 h-4 opacity-70" />}
+        </div>
+      </button>
+    );
+  };
+
   return (
-    <div className="flex min-h-screen bg-zinc-50 text-zinc-900">
+    <div className="admin-panel-shell flex min-h-screen text-zinc-900">
       {/* Sidebar Mobile Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -694,113 +764,89 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
       {/* Admin Sidebar */}
       <div className={cn(
-        "pda-admin-sidebar fixed inset-y-0 left-0 z-50 w-72 h-screen flex flex-col transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0",
+        "fixed inset-y-0 left-0 z-50 w-[286px] h-screen flex flex-col bg-[#f5f6f8] border-r border-zinc-200/80 transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0",
         !isSidebarOpen && "-translate-x-full"
       )}>
-        <div className="pda-admin-brand flex items-center justify-between mb-8">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm border border-zinc-200 bg-white p-0.5">
-              <SafeImage 
-                src={(settings.logoUrl && settings.logoUrl !== '/pda-logo.svg') ? settings.logoUrl : '/icon-512.png'} 
-                className="w-full h-full object-contain bg-white" 
-                alt="PDA Comercial"
-              />
+        <div className="p-5 pb-3">
+          <div className="flex items-center justify-between rounded-2xl bg-white border border-zinc-200 p-3 shadow-sm">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-11 h-11 rounded-2xl overflow-hidden border border-zinc-200 bg-white p-1 shrink-0">
+                <SafeImage
+                  src={(settings.logoUrl && settings.logoUrl !== '/pda-logo.svg') ? settings.logoUrl : '/icon-512.png'}
+                  className="w-full h-full object-contain"
+                  alt="PDA Comercial"
+                />
+              </div>
+              <div className="min-w-0">
+                <div className="font-display text-sm font-black tracking-tight uppercase text-[#062b5c] truncate">
+                  {settings.storeName || 'PDA Comercial'}
+                </div>
+                <div className="text-[10px] text-zinc-500 truncate mt-0.5">Painel administrativo</div>
+              </div>
             </div>
-            <div className="flex flex-col">
-              <span className="font-display text-lg font-bold tracking-tight uppercase text-zinc-900 leading-tight">
-                {settings.storeName.split(' ').map((word, i) => (
-                  <span key={i} className={i === settings.storeName.split(' ').length - 1 ? "text-primary" : ""}>
-                    {word}{' '}
-                  </span>
-                ))}
-              </span>
-              <span className="text-[9px] text-zinc-500 font-medium">{settings.storeDescription}</span>
-            </div>
+            <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 hover:bg-zinc-100 rounded-xl" aria-label="Fechar menu">
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 hover:bg-zinc-100 rounded-lg">
-            <X className="w-5 h-5" />
+        </div>
+
+        <div className="px-5 pb-4">
+          <div className="rounded-2xl bg-[#062b5c] p-4 text-white shadow-[0_12px_28px_rgba(6,43,92,.14)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-[.16em] text-white/60">Estado da loja</div>
+                <div className="mt-1.5 flex items-center gap-2 text-sm font-bold">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                  Online
+                </div>
+              </div>
+              <Store className="w-5 h-5 text-white/60" />
+            </div>
+            <button onClick={onBackToStore} className="mt-3 w-full rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 py-2 text-[11px] font-bold transition-colors">
+              Ver loja
+            </button>
+          </div>
+        </div>
+
+        <div className="px-5 pb-4">
+          <button
+            onClick={openNewProduct}
+            className="w-full flex items-center justify-center gap-2 rounded-2xl bg-[#ff6900] hover:bg-[#ea5d00] text-white py-3 px-4 text-sm font-black shadow-[0_10px_22px_rgba(255,105,0,.18)] transition-all active:scale-[.98]"
+          >
+            <Plus className="w-4 h-4" />
+            Novo produto
           </button>
         </div>
 
-        <div className="pda-admin-section-label">MENU PRINCIPAL</div>
-        <nav className="flex-1 space-y-1">
-          {menuItems.slice(0, 5).map((item) => {
-            const isReservations = item.id === 'reservations';
-            const shouldBlink = isReservations && pendingReservationsCount > 0;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setAdminTab(item.id);
-                  setIsSidebarOpen(false);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                className={cn(
-                  "w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-all cursor-pointer",
-                  adminTab === item.id 
-                    ? "bg-primary text-white shadow-lg" 
-                    : shouldBlink
-                      ? "bg-amber-50 text-amber-900 border border-amber-300 shadow-sm animate-blink"
-                      : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
-                )}
-                style={adminTab === item.id ? { boxShadow: `0 10px 15px -3px ${settings.primaryColor}33` } : {}}
-              >
-                <div className="flex items-center gap-3">
-                  <item.icon className={cn("w-5 h-5", shouldBlink && "text-amber-600 animate-pulse")} />
-                  <span className={cn(shouldBlink && "font-bold text-amber-800 animate-pulse")}>{item.label}</span>
-                </div>
-                {shouldBlink && (
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
-                    <span className="text-[10px] font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">
-                      {pendingReservationsCount}
-                    </span>
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
-        <div className="pda-admin-section-label mt-5">GESTÃO</div>
-        <nav className="space-y-1">
-          {menuItems.slice(5).map((item) => {
-            const shouldBlink = item.id === 'reservations' && pendingReservationsCount > 0;
-            return (
-              <button key={item.id} onClick={() => { setAdminTab(item.id); setIsSidebarOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                className={cn("pda-admin-nav-item w-full flex items-center justify-between", adminTab === item.id ? "active" : "", shouldBlink && "attention")}>
-                <span className="flex items-center gap-3"><item.icon className="w-5 h-5"/><span>{item.label}</span></span>
-                <ChevronRight className="w-4 h-4 opacity-40"/>
-              </button>
-            );
-          })}
+        <nav className="flex-1 overflow-y-auto px-5 pb-5 space-y-5">
+          <div>
+            <div className="px-2 mb-2 text-[9px] font-black uppercase tracking-[.18em] text-zinc-400">Principal</div>
+            <div className="space-y-1.5">{primaryMenuItems.map(renderNavItem)}</div>
+          </div>
+          <div>
+            <div className="px-2 mb-2 text-[9px] font-black uppercase tracking-[.18em] text-zinc-400">Gestão</div>
+            <div className="space-y-1.5">{managementMenuItems.map(renderNavItem)}</div>
+          </div>
         </nav>
 
-        <div className="pda-admin-store-card">
-          <div className="flex items-center gap-2"><Store className="w-4 h-4"/><span>Loja online</span><span className="pda-online-dot"/></div>
-          <button onClick={onBackToStore}>Ver loja <ArrowLeft className="w-3.5 h-3.5 rotate-180"/></button>
-        </div>
-        <div className="pt-4 border-t border-white/10">
-          <div 
+        <div className="p-5 pt-3 border-t border-zinc-200 bg-[#f5f6f8]">
+          <button
             onClick={() => {
-              if (window.confirm('Deseja encerrar a sessão?')) {
-                signOut(auth);
-              }
+              if (window.confirm('Deseja encerrar a sessão?')) signOut(auth);
             }}
-            className="flex items-center gap-3 mb-4 cursor-pointer hover:bg-zinc-50 p-2 rounded-2xl transition-all active:scale-95 group"
+            className="w-full flex items-center gap-3 rounded-2xl bg-white border border-zinc-200 p-2.5 hover:border-red-200 hover:bg-red-50 transition-all group text-left"
           >
-            <div className="w-10 h-10 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-600 font-bold group-hover:bg-red-50 group-hover:text-red-600 transition-colors">
-              P
-            </div>
-            <div>
+            <div className="w-10 h-10 rounded-xl bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-600 font-bold group-hover:bg-red-100 group-hover:text-red-600 transition-colors">P</div>
+            <div className="min-w-0">
               <div className="text-xs font-bold text-zinc-900 group-hover:text-red-600 transition-colors">PDA Admin</div>
-              <div className="text-[10px] text-zinc-500">Terminar Sessão</div>
+              <div className="text-[10px] text-zinc-500">Terminar sessão</div>
             </div>
-          </div>
+          </button>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
+      <main className="admin-panel-scroll flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
         <div className="p-4 sm:p-6 lg:p-10 space-y-8 max-w-7xl mx-auto w-full">
           {/* Header */}
           <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -823,7 +869,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     {adminTab === 'finance' && 'Financeiro & Dívidas'}
                     {adminTab === 'settings' && 'Definições do Site'}
                   </h1>
-                  <p className="text-zinc-500 text-xs md:text-sm">Painel leve com carregamento sob demanda.</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2"><p className="text-zinc-500 text-xs md:text-sm">Painel leve com carregamento sob demanda.</p><span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-100 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-emerald-700"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Loja online</span></div>
                 </div>
               </div>
 
