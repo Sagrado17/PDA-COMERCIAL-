@@ -1881,10 +1881,22 @@ const ProductModal = React.memo(({
 
   const isOutOfStock = variationStock <= 0;
 
-  // Seleciona automaticamente uma variação disponível para evitar abrir o produto
-  // numa cor/tamanho esgotado e mostrar o aviso vermelho sem necessidade.
+  // Distingue uma mudança manual de cor de uma mudança de tamanho/província.
+  // Cor escolhida manualmente sem stock: mantém a escolha e mostra o aviso vermelho.
+  // Ao mudar tamanho/província, procura automaticamente uma combinação disponível.
+  const previousSelectionRef = useRef<{ color: string; size: string; province: string } | null>(null);
+
   useEffect(() => {
-    if (!stock.length || !isOutOfStock) return;
+    const previous = previousSelectionRef.current;
+    previousSelectionRef.current = { color: selectedColor, size: selectedSize, province: selectedProvince };
+
+    if (!stock.length) return;
+    const colorChangedOnly = previous &&
+      previous.color !== selectedColor &&
+      previous.size === selectedSize &&
+      previous.province === selectedProvince;
+    if (colorChangedOnly) return;
+    if (!isOutOfStock) return;
 
     const productVariations = stock.filter(item => item.productId === product.id);
     const availableVariations = productVariations.filter(item =>
