@@ -70,6 +70,8 @@ export interface Sale {
   status: 'paid' | 'pending' | 'cancelled';
   type: 'sale' | 'reservation';
   channel?: 'whatsapp' | 'sms';
+  deliveryType?: 'pickup' | 'delivery';
+  shippingFee?: number;
   createdAt: string;
   paidAt?: string;
   archived?: boolean;
