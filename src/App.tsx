@@ -1502,6 +1502,21 @@ const ProvinceSelectorModal = React.memo(({
   );
 });
 
+// Abre o WhatsApp da loja com um pedido de encomenda para produto esgotado.
+const openOrderOnWhatsApp = (
+  phone: string | undefined,
+  product: Product,
+  opts?: { color?: string; size?: string; province?: string }
+) => {
+  const target = (phone || '244935799097').replace(/\D/g, '');
+  const details = [opts?.color, opts?.size].filter(Boolean).join(' / ');
+  const text =
+    `Olá! Gostaria de encomendar o produto esgotado:\n*${product.name}*` +
+    (details ? ` (${details})` : '') +
+    (opts?.province ? `\nProvíncia: ${opts.province}` : '');
+  window.open(`https://wa.me/${target}?text=${encodeURIComponent(text)}`, '_blank');
+};
+
 const ProductCard = React.memo(({ 
   product, 
   onSelect, 
@@ -1513,6 +1528,7 @@ const ProductCard = React.memo(({
   onToggleFavorite,
   priceColor,
   discountSettings,
+  whatsappNumber,
   index = 0
 }: { 
   product: Product; 
@@ -1525,6 +1541,7 @@ const ProductCard = React.memo(({
   onToggleFavorite?: (productId: string, e?: React.MouseEvent) => void;
   priceColor?: string;
   discountSettings?: DiscountSettings;
+  whatsappNumber?: string;
   index?: number;
   key?: React.Key 
 }) => {
@@ -1707,21 +1724,35 @@ const ProductCard = React.memo(({
               )}
             </div>
 
-            <button
-              onClick={handleQuickAdd}
-              disabled={isOutOfStock}
-              className={cn(
-                "w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-sm sm:text-base text-white shadow-md transition-all active:scale-90 cursor-pointer shrink-0",
-                isAddedQuickly 
-                  ? "bg-emerald-600 shadow-emerald-600/25 scale-105" 
-                  : isOutOfStock
-                    ? "bg-zinc-300 text-zinc-500 cursor-not-allowed"
-                    : "bg-[#ff6900] hover:bg-[#ff8500] shadow-orange-600/30 hover:scale-105"
-              )}
-              title={isOutOfStock ? "Esgotado" : "Adicionar ao Carrinho"}
-            >
-              {isAddedQuickly ? "✓" : <Plus className="w-4 h-4" />}
-            </button>
+            {isOutOfStock ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openOrderOnWhatsApp(whatsappNumber, product, { province: selectedProvince });
+                }}
+                className="h-7.5 sm:h-8 px-3 rounded-full bg-[#062b5c] text-white text-[10px] sm:text-xs font-bold shadow-md transition-all active:scale-95 cursor-pointer shrink-0"
+                title="Encomendar este produto"
+              >
+                Encomendar
+              </button>
+            ) : (
+              <button
+                onClick={handleQuickAdd}
+                disabled={isOutOfStock}
+                className={cn(
+                  "w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-sm sm:text-base text-white shadow-md transition-all active:scale-90 cursor-pointer shrink-0",
+                  isAddedQuickly 
+                    ? "bg-emerald-600 shadow-emerald-600/25 scale-105" 
+                    : isOutOfStock
+                      ? "bg-zinc-300 text-zinc-500 cursor-not-allowed"
+                      : "bg-[#ff6900] hover:bg-[#ff8500] shadow-orange-600/30 hover:scale-105"
+                )}
+                title={isOutOfStock ? "Esgotado" : "Adicionar ao Carrinho"}
+              >
+                {isAddedQuickly ? "✓" : <Plus className="w-4 h-4" />}
+              </button>
+            )}
           </div>
 
           {/* Pagamento no acto da entrega */}
@@ -1750,7 +1781,8 @@ const ProductModal = React.memo(({
   priceColor,
   isFavorite = false,
   onToggleFavorite,
-  discountSettings
+  discountSettings,
+  whatsappNumber
 }: { 
   product: Product; 
   onClose: () => void; 
@@ -1767,6 +1799,7 @@ const ProductModal = React.memo(({
   isFavorite?: boolean;
   onToggleFavorite?: (productId: string, e?: React.MouseEvent) => void;
   discountSettings?: DiscountSettings;
+  whatsappNumber?: string;
   key?: React.Key 
 }) => {
   const [activeTab, setActiveTab] = useState<'details' | 'comments'>('details');
@@ -2275,6 +2308,17 @@ const ProductModal = React.memo(({
               )}
 
               {/* BOTÕES DE COMPRA (DO SCRIPT) */}
+              {isOutOfStock && (
+                <button
+                  type="button"
+                  onClick={() => openOrderOnWhatsApp(whatsappNumber, product, { color: selectedColor, size: selectedSize, province: selectedProvince })}
+                  className="w-full min-h-[52px] mt-3 rounded-2xl bg-[#ff6900] text-white font-extrabold text-base shadow-md active:scale-95 transition-all cursor-pointer"
+                >
+                  📦 Encomendar
+                </button>
+              )}
+
+              {!isOutOfStock && (
               <div className="buy-area">
                 <button
                   type="button"
@@ -2322,6 +2366,7 @@ const ProductModal = React.memo(({
                   Comprar agora
                 </button>
               </div>
+              )}
 
               {/* SUPORTE POR LIGAÇÃO */}
               <div className="mt-4 flex items-center justify-center text-xs pt-3.5 border-t border-zinc-100 text-zinc-500">
@@ -2461,7 +2506,7 @@ const Cart = React.memo(({
   items: CartItem[]; 
   onUpdateQuantity: (pid: string, c: string, s: string, q: number) => void; 
   onRemove: (pid: string, c: string, s: string) => void; 
-  onCheckout: (info: { name: string, phone: string, province: string, neighborhood?: string, address?: string, coupon?: Coupon, channel?: 'whatsapp' | 'sms' }) => void; 
+  onCheckout: (info: { name: string, phone: string, province: string, neighborhood?: string, address?: string, coupon?: Coupon, channel?: 'whatsapp' | 'sms', deliveryType?: 'pickup' | 'delivery' }) => void; 
   onCallUs: () => void; 
   onViewReservations: () => void; 
   isAuthenticated: boolean;
@@ -2476,6 +2521,7 @@ const Cart = React.memo(({
   const [couponError, setCouponError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<'whatsapp' | 'sms' | null>(null);
+  const [deliveryType, setDeliveryType] = useState<'pickup' | 'delivery'>('delivery');
 
   useEffect(() => {
     setCustomerInfo(prev => ({ ...prev, province: selectedProvince }));
@@ -2484,6 +2530,8 @@ const Cart = React.memo(({
   const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
   const isFreeDelivery = totalQuantity > 1;
+  // Frete de 600 Kz só para entrega domiciliar com apenas 1 item.
+  const shippingFee = deliveryType === 'delivery' && !isFreeDelivery ? 600 : 0;
   
   const discountAmount = useMemo(() => {
     if (!appliedCoupon) return 0;
@@ -2503,7 +2551,7 @@ const Cart = React.memo(({
       : Math.min((appliedCoupon.value || 0), total)) || 0;
   }, [appliedCoupon, items, total]);
 
-  const finalTotal = total - discountAmount;
+  const finalTotal = total - discountAmount + shippingFee;
 
   const handleApplyCoupon = () => {
     setCouponError('');
@@ -2672,22 +2720,37 @@ const Cart = React.memo(({
                   </div>
                 </div>
 
-                {/* ENTREGA (DO SCRIPT) */}
-                <div className="delivery-card">
-                  <div className={cn("delivery-icon", isFreeDelivery ? "bg-[#eaf8f0] text-[#18a663]" : "bg-[#fff1e8] text-[#ff6900]")}>
-                    🚚
+                {/* FORMA DE RECEÇÃO: VENHO BUSCAR / ENTREGA DOMICILIAR */}
+                <div className="bg-white rounded-[22px] p-5 shadow-[0_8px_28px_rgba(5,34,70,.07)] border border-[#e6ebf1]/60">
+                  <h2 className="text-[17px] font-extrabold text-[#132238] mb-3">Como quer receber?</h2>
+                  <div className="flex flex-col gap-2.5">
+                    <label className={cn("flex items-center gap-3 p-3.5 rounded-[16px] border cursor-pointer transition-all", deliveryType === 'pickup' ? "border-[#ff6900] bg-orange-50/40" : "border-[#e6ebf1] bg-white")}>
+                      <input
+                        type="checkbox"
+                        checked={deliveryType === 'pickup'}
+                        onChange={() => setDeliveryType('pickup')}
+                        className="w-5 h-5 accent-[#ff6900] shrink-0"
+                      />
+                      <span className="flex flex-col">
+                        <strong className="text-[15px] text-[#132238]">Venho buscar</strong>
+                        <span className="text-xs text-[#738096] font-medium">Sem custo de entrega</span>
+                      </span>
+                    </label>
+                    <label className={cn("flex items-center gap-3 p-3.5 rounded-[16px] border cursor-pointer transition-all", deliveryType === 'delivery' ? "border-[#ff6900] bg-orange-50/40" : "border-[#e6ebf1] bg-white")}>
+                      <input
+                        type="checkbox"
+                        checked={deliveryType === 'delivery'}
+                        onChange={() => setDeliveryType('delivery')}
+                        className="w-5 h-5 accent-[#ff6900] shrink-0"
+                      />
+                      <span className="flex flex-col">
+                        <strong className="text-[15px] text-[#132238]">Entrega domiciliar 🚚</strong>
+                        <span className={cn("text-xs font-medium", isFreeDelivery ? "text-[#18a663]" : "text-[#738096]")}>
+                          {isFreeDelivery ? 'Grátis (para mais de 1 item)' : 'Frete: 600 Kz (grátis com mais de 1 item)'}
+                        </span>
+                      </span>
+                    </label>
                   </div>
-                  <div className="delivery-info">
-                    <strong className="text-[15px] text-[#132238]">Entrega ao Domicílio</strong>
-                    <span className="text-xs text-[#738096] font-medium">
-                      Grátis (para mais de 1 item)
-                    </span>
-                  </div>
-                  {isFreeDelivery && (
-                    <div className="delivery-check" title="Entrega Grátis Ativa">
-                      ✓
-                    </div>
-                  )}
                 </div>
 
                 {/* DADOS DA RESERVA */}
@@ -2862,9 +2925,11 @@ const Cart = React.memo(({
                   </div>
 
                   <div className="summary-line">
-                    <span>Entrega ao Domicílio</span>
-                    <span style={{ color: isFreeDelivery ? 'var(--verde)' : '#738096', fontWeight: 'bold' }}>
-                      Grátis (para mais de 1 item)
+                    <span>{deliveryType === 'pickup' ? 'Venho buscar' : 'Entrega domiciliar'}</span>
+                    <span style={{ color: (deliveryType === 'pickup' || isFreeDelivery) ? 'var(--verde)' : '#132238', fontWeight: 'bold' }}>
+                      {deliveryType === 'pickup'
+                        ? 'Sem custo'
+                        : (isFreeDelivery ? 'Grátis (para mais de 1 item)' : `${shippingFee.toLocaleString('pt-AO')} Kz`)}
                     </span>
                   </div>
 
@@ -2976,11 +3041,13 @@ const Cart = React.memo(({
                         await onCheckout({
                           ...customerInfo, 
                           coupon: appliedCoupon || undefined,
-                          channel: selectedChannel
+                          channel: selectedChannel,
+                          deliveryType
                         });
                         setCustomerInfo({ name: '', phone: '', province: '', neighborhood: '', address: '' });
                         onProvinceChange('');
                         setSelectedChannel(null);
+                        setDeliveryType('delivery');
                         setAppliedCoupon(null);
                       } finally {
                         setIsSubmitting(false);
@@ -3928,7 +3995,7 @@ export default function App() {
     ));
   }, [removeFromCart]);
 
-  const handleCartReservation = useCallback(async (customerInfo: { name: string, phone: string, province: string, neighborhood?: string, address?: string, coupon?: Coupon, channel?: 'whatsapp' | 'sms' }) => {
+  const handleCartReservation = useCallback(async (customerInfo: { name: string, phone: string, province: string, neighborhood?: string, address?: string, coupon?: Coupon, channel?: 'whatsapp' | 'sms', deliveryType?: 'pickup' | 'delivery' }) => {
     if (cart.length === 0) return;
 
     if (!customerInfo.province) {
@@ -3988,7 +4055,11 @@ export default function App() {
         }
       }
 
-      const totalAmount = subtotal - discount;
+      const cartQuantity = cart.reduce((sum, item) => sum + item.quantity, 0);
+      const deliveryType = customerInfo.deliveryType || 'delivery';
+      const shippingFee = deliveryType === 'delivery' && cartQuantity <= 1 ? 600 : 0;
+      const deliveryLabel = deliveryType === 'pickup' ? 'Venho buscar' : 'Entrega domiciliar';
+      const totalAmount = subtotal - discount + shippingFee;
       const saleId = (await addDoc(collection(db, 'sales'), {
         customerName: customerInfo.name || 'Consumidor Final',
         customerPhone: customerInfo.phone || 'N/A',
@@ -4011,6 +4082,8 @@ export default function App() {
         status: 'pending',
         type: 'reservation',
         channel: customerInfo.channel || 'whatsapp',
+        deliveryType,
+        shippingFee,
         createdAt: new Date().toISOString()
       })).id;
 
@@ -4040,6 +4113,8 @@ export default function App() {
           `Cliente: ${customerInfo.name || 'Consumidor Final'}\n` +
           `Tel: ${customerInfo.phone || 'N/A'}\n` +
           `Província: ${customerInfo.province}\n` +
+          `Receção: ${deliveryLabel}\n` +
+          (shippingFee > 0 ? `Frete: KZ ${shippingFee}\n` : '') +
           (customerInfo.neighborhood ? `Bairro: ${customerInfo.neighborhood}\n` : '') +
           `Itens:\n` +
           cart.map(item => `- ${item.productName} (${item.variation.color}/${item.variation.size}) x${item.quantity}`).join('\n') +
@@ -4061,6 +4136,8 @@ export default function App() {
           `*Cliente:* ${customerInfo.name || 'Consumidor Final'}\n` +
           `*WhatsApp:* ${customerInfo.phone || 'N/A'}\n` +
           `*Província:* ${customerInfo.province || 'Não informada'}\n` +
+          `*Receção:* ${deliveryLabel}\n` +
+          (shippingFee > 0 ? `*Frete:* KZ ${shippingFee}\n` : '') +
           (customerInfo.neighborhood ? `*Bairro:* ${customerInfo.neighborhood}\n` : '') +
           (customerInfo.address ? `*Endereço/Referência:* ${customerInfo.address}\n` : '') + `\n` +
           `*Itens:* \n` +
@@ -4566,6 +4643,7 @@ export default function App() {
                           onToggleFavorite={toggleFavorite}
                           priceColor={settings.priceColor || '#ff6900'}
                           discountSettings={settings.discountSettings}
+                          whatsappNumber={settings.whatsappNumber}
                         />
                         {/* Mobile: Exibição única após as 3 filas abaixo */}
                         {isMobileTrigger && recentTop10.length > 0 && (
@@ -4647,6 +4725,7 @@ export default function App() {
                   stock={stock}
                   onCallUs={() => setIsPhoneModalOpen(true)}
                   onShare={handleShareProduct}
+                  whatsappNumber={settings.whatsappNumber}
                   copiedLink={copiedLink}
                   selectedProvince={selectedProvince}
                   priceColor={settings.priceColor || '#ff6900'}
