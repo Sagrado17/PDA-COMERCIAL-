@@ -1881,6 +1881,45 @@ const ProductModal = React.memo(({
 
   const isOutOfStock = variationStock <= 0;
 
+  // Distingue uma mudança manual de cor de uma mudança de tamanho/província.
+  // Cor escolhida manualmente sem stock: mantém a escolha e mostra o aviso vermelho.
+  // Ao mudar tamanho/província, procura automaticamente uma combinação disponível.
+  const previousSelectionRef = useRef<{ color: string; size: string; province: string } | null>(null);
+
+  useEffect(() => {
+    const previous = previousSelectionRef.current;
+    previousSelectionRef.current = { color: selectedColor, size: selectedSize, province: selectedProvince };
+
+    if (!stock.length) return;
+    const colorChangedOnly = previous &&
+      previous.color !== selectedColor &&
+      previous.size === selectedSize &&
+      previous.province === selectedProvince;
+    if (colorChangedOnly) return;
+    if (!isOutOfStock) return;
+
+    const productVariations = stock.filter(item => item.productId === product.id);
+    const availableVariations = productVariations.filter(item =>
+      getVariationStock(item, selectedProvince) > 0
+    );
+
+    if (!availableVariations.length) return;
+
+    // Primeiro tenta manter o tamanho escolhido e encontrar outra cor disponível.
+    const sameSizeAvailable = availableVariations.find(item =>
+      item.variation.size === selectedSize
+    );
+    const nextVariation = sameSizeAvailable || availableVariations[0];
+
+    if (nextVariation.variation.color !== selectedColor) {
+      setSelectedColor(nextVariation.variation.color);
+    }
+    if (nextVariation.variation.size !== selectedSize) {
+      setSelectedSize(nextVariation.variation.size);
+    }
+    setQuantity(1);
+  }, [stock, product.id, selectedProvince, isOutOfStock, selectedColor, selectedSize]);
+
   const ratingBreakdown = useMemo(() => {
     const counts = [0, 0, 0, 0, 0];
     ratings.forEach(r => {
@@ -2164,13 +2203,21 @@ const ProductModal = React.memo(({
                           type="button"
                           onClick={() => setSelectedColor(color)}
                           className={cn(
-                            "option", 
+                            "option !h-auto !min-h-[76px] !px-2 !py-2 flex flex-col items-center justify-center gap-1.5",
                             selectedColor === color && "active",
                             isUnavailable && "opacity-45 text-zinc-400"
                           )}
                           title={isUnavailable ? `Sem estoque disponível neste tamanho (${colorQty} disp.)` : `${colorQty} unidades disponíveis`}
+                          aria-label={`Selecionar cor ${color}`}
                         >
-                          {color}
+                          <span className="w-12 h-12 rounded-lg overflow-hidden bg-zinc-50 border border-zinc-200 flex items-center justify-center shrink-0">
+                            <SafeImage
+                              src={(product.colorImages && product.colorImages[color]) || product.images[0] || ''}
+                              alt={`Foto ${color} - ${product.name}`}
+                              className="w-full h-full object-contain"
+                            />
+                          </span>
+                          <span className="text-[11px] font-bold leading-none truncate max-w-[72px]">{color}</span>
                         </button>
                       );
                     })}
