@@ -1881,45 +1881,6 @@ const ProductModal = React.memo(({
 
   const isOutOfStock = variationStock <= 0;
 
-  // Distingue uma mudança manual de cor de uma mudança de tamanho/província.
-  // Cor escolhida manualmente sem stock: mantém a escolha e mostra o aviso vermelho.
-  // Ao mudar tamanho/província, procura automaticamente uma combinação disponível.
-  const previousSelectionRef = useRef<{ color: string; size: string; province: string } | null>(null);
-
-  useEffect(() => {
-    const previous = previousSelectionRef.current;
-    previousSelectionRef.current = { color: selectedColor, size: selectedSize, province: selectedProvince };
-
-    if (!stock.length) return;
-    const colorChangedOnly = previous &&
-      previous.color !== selectedColor &&
-      previous.size === selectedSize &&
-      previous.province === selectedProvince;
-    if (colorChangedOnly) return;
-    if (!isOutOfStock) return;
-
-    const productVariations = stock.filter(item => item.productId === product.id);
-    const availableVariations = productVariations.filter(item =>
-      getVariationStock(item, selectedProvince) > 0
-    );
-
-    if (!availableVariations.length) return;
-
-    // Primeiro tenta manter o tamanho escolhido e encontrar outra cor disponível.
-    const sameSizeAvailable = availableVariations.find(item =>
-      item.variation.size === selectedSize
-    );
-    const nextVariation = sameSizeAvailable || availableVariations[0];
-
-    if (nextVariation.variation.color !== selectedColor) {
-      setSelectedColor(nextVariation.variation.color);
-    }
-    if (nextVariation.variation.size !== selectedSize) {
-      setSelectedSize(nextVariation.variation.size);
-    }
-    setQuantity(1);
-  }, [stock, product.id, selectedProvince, isOutOfStock, selectedColor, selectedSize]);
-
   const ratingBreakdown = useMemo(() => {
     const counts = [0, 0, 0, 0, 0];
     ratings.forEach(r => {
@@ -2203,21 +2164,13 @@ const ProductModal = React.memo(({
                           type="button"
                           onClick={() => setSelectedColor(color)}
                           className={cn(
-                            "option !h-auto !min-h-[76px] !px-2 !py-2 flex flex-col items-center justify-center gap-1.5",
+                            "option", 
                             selectedColor === color && "active",
                             isUnavailable && "opacity-45 text-zinc-400"
                           )}
                           title={isUnavailable ? `Sem estoque disponível neste tamanho (${colorQty} disp.)` : `${colorQty} unidades disponíveis`}
-                          aria-label={`Selecionar cor ${color}`}
                         >
-                          <span className="w-12 h-12 rounded-lg overflow-hidden bg-zinc-50 border border-zinc-200 flex items-center justify-center shrink-0">
-                            <SafeImage
-                              src={(product.colorImages && product.colorImages[color]) || product.images[0] || ''}
-                              alt={`Foto ${color} - ${product.name}`}
-                              className="w-full h-full object-contain"
-                            />
-                          </span>
-                          <span className="text-[11px] font-bold leading-none truncate max-w-[72px]">{color}</span>
+                          {color}
                         </button>
                       );
                     })}
@@ -4362,14 +4315,13 @@ export default function App() {
                 }}
               />
 
-              {/* Categorias Adaptadas (Roupas, Calçados, Telemóveis, Acessórios, Relógios, Outros) */}
+              {/* Categorias com imagens — PDA Comercial */}
               <section className="section mt-7">
                 <div className="section-header flex items-center justify-between mb-3.5">
                   <h2 className="section-title text-xl sm:text-2xl font-black text-[#142238] tracking-tight">
                     Categorias
                   </h2>
-
-                  <button 
+                  <button
                     onClick={() => setSelectedCategory('all')}
                     className="see-all text-xs sm:text-sm font-bold text-[#ff6900] hover:text-[#ff8500] cursor-pointer transition-colors"
                   >
@@ -4379,12 +4331,12 @@ export default function App() {
 
                 <div className="categories grid grid-cols-3 sm:grid-cols-6 gap-3 sm:gap-4">
                   {[
-                    { id: 'roupas', name: 'Roupas', icon: '👕', filterKey: 'roupas' },
-                    { id: 'calcados', name: 'Calçados', icon: '👟', filterKey: 'calcados' },
-                    { id: 'telemoveis', name: 'Telemóveis', icon: '📱', filterKey: 'telemoveis' },
-                    { id: 'acessorios', name: 'Acessórios', icon: '🎧', filterKey: 'acessorios' },
-                    { id: 'relogios', name: 'Relógios', icon: '⌚', filterKey: 'relogios' },
-                    { id: 'outros', name: 'Outros', icon: '•••', filterKey: 'all' },
+                    { id: 'roupas', name: 'Roupas', image: '/categorias/roupas.jpg', filterKey: 'roupas' },
+                    { id: 'calcados', name: 'Calçados', image: '/categorias/calcados.jpg', filterKey: 'calcados' },
+                    { id: 'telemoveis', name: 'Telemóveis', image: '/categorias/telemoveis.jpg', filterKey: 'telemoveis' },
+                    { id: 'acessorios', name: 'Acessórios', image: '/categorias/acessorios.jpg', filterKey: 'acessorios' },
+                    { id: 'relogios', name: 'Relógios', image: '/categorias/relogios.jpg', filterKey: 'relogios' },
+                    { id: 'outros', name: 'Outros', image: '/categorias/outros.jpg', filterKey: 'all' },
                   ].map(cat => {
                     const isSelected = selectedCategory === cat.filterKey;
                     return (
@@ -4392,14 +4344,22 @@ export default function App() {
                         key={cat.id}
                         onClick={() => setSelectedCategory(isSelected ? 'all' : cat.filterKey)}
                         className={cn(
-                          "category bg-white rounded-[20px] p-3 sm:p-3.5 text-center transition-all cursor-pointer border shadow-xs hover:-translate-y-1 hover:shadow-md",
-                          isSelected 
-                            ? "border-[#ff6900] ring-2 ring-orange-500/20 bg-orange-50/20" 
+                          "category group bg-white rounded-[20px] p-3 sm:p-3.5 text-center transition-all cursor-pointer border shadow-xs hover:-translate-y-1 hover:shadow-md",
+                          isSelected
+                            ? "border-[#ff6900] ring-2 ring-orange-500/20 bg-orange-50/20"
                             : "border-[#e7ebf1] hover:border-orange-200"
                         )}
                       >
-                        <div className="category-image w-14 h-14 sm:w-18 sm:h-18 mx-auto rounded-[16px] sm:rounded-[18px] bg-[#f2f4f8] flex items-center justify-center text-2xl sm:text-3xl shadow-inner transition-transform group-hover:scale-105">
-                          {cat.icon}
+                        <div className="category-image w-14 h-14 sm:w-18 sm:h-18 mx-auto rounded-[16px] sm:rounded-[18px] bg-[#f2f4f8] overflow-hidden shadow-inner transition-transform group-hover:scale-105">
+                          <img
+                            src={cat.image}
+                            alt={cat.name}
+                            loading="lazy"
+                            className="w-full h-full object-cover"
+                            onError={event => {
+                              event.currentTarget.style.display = 'none';
+                            }}
+                          />
                         </div>
                         <span className={cn(
                           "category-name block mt-2 text-xs sm:text-sm font-bold truncate transition-colors",
@@ -4411,7 +4371,6 @@ export default function App() {
                     );
                   })}
                 </div>
-
                 {/* Sub-Pills de Categorias registradas na Loja */}
                 <div id="catalog-products" className="mt-4 pt-2">
                   <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
