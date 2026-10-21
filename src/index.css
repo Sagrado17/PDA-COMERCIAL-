@@ -1293,3 +1293,247 @@
 .admin-panel-scroll::-webkit-scrollbar-track { background: transparent; }
 .admin-panel-scroll::-webkit-scrollbar-thumb { background: #d7dce3; border-radius: 999px; }
 .admin-panel-scroll::-webkit-scrollbar-thumb:hover { background: #bcc4cf; }
+
+/* =====================================================
+   PDA COMERCIAL — TELA DE PRODUTO (VERSÃO BRANCA)
+   Fundo branco; azul escuro e laranja mantidos.
+===================================================== */
+.product-gallery,
+.product-photo,
+.product-content {
+  background: #ffffff;
+}
+
+.pm-save {
+  align-self: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #e6f6ec;
+  color: #0f7a3d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pm-tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 18px;
+  padding: 4px;
+  border-radius: 999px;
+  background: #eef3fb;
+}
+
+.pm-tab {
+  flex: 1;
+  min-height: 44px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #4a5b80;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.pm-tab.active {
+  background: #062b5c;
+  color: #ffffff;
+}
+
+.pm-tab-count {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 105, 0, 0.14);
+  color: #c2410c;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pm-tab.active .pm-tab-count {
+  background: #ff6900;
+  color: #062b5c;
+}
+
+.pm-info {
+  padding-top: 14px;
+}
+
+.pm-stock-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pm-stock-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #132238;
+}
+
+.pm-check {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #ff6900;
+  color: #062b5c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pm-stock-list li.out {
+  color: #94a3b8;
+}
+
+.pm-stock-list li.out .pm-check {
+  background: #e2e8f0;
+  color: #64748b;
+}
+
+.pm-cod {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: #fff4d6;
+  color: #7a4a00;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.35;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-section:has(.pm-qty-row) {
+  margin-top: 20px;
+  padding-top: 18px;
+}
+
+.pm-qty-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pm-qty-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.pm-stock-chip {
+  padding: 3px 9px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pm-stock-chip.ok {
+  background: #e6f6ec;
+  color: #0f7a3d;
+}
+
+.pm-stock-chip.out {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.pm-qty-row .quantity button {
+  width: 44px;
+  height: 44px;
+}
+
+.pm-qty-row .quantity button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pm-footer {
+  flex-shrink: 0;
+  background: #ffffff;
+  border-top: 1px solid #e5eaf0;
+  box-shadow: 0 -8px 24px rgba(6, 43, 92, 0.1);
+  border-radius: 24px 24px 0 0;
+  padding: 12px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  position: relative;
+  z-index: 30;
+}
+
+.pm-subtotal {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 4px 10px;
+}
+
+.pm-subtotal span {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.pm-subtotal strong {
+  font-size: 22px;
+  font-weight: 900;
+  color: #ff6900;
+}
+
+.pm-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.pm-cart {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid #062b5c;
+  background: #ffffff;
+  color: #062b5c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.pm-buy {
+  flex: 1;
+  min-height: 56px;
+  border-radius: 999px;
+  background: #ff6900;
+  color: #062b5c;
+  font-size: 16px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(255, 105, 0, 0.28);
+  transition: transform 0.15s;
+}
+
+.pm-cart:active,
+.pm-buy:active {
+  transform: scale(0.97);
+}
+
+.pm-tab:focus-visible,
+.pm-cart:focus-visible,
+.pm-buy:focus-visible {
+  outline: 3px solid #ff6900;
+  outline-offset: 2px;
+}
