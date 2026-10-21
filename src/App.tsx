@@ -1948,6 +1948,39 @@ const ProductModal = React.memo(({
     return counts.reverse(); // 5 to 1
   }, [ratings]);
 
+  const oldPrice = Math.round(product.price / (1 - (discountPercentage / 100)));
+  const savedAmount = Math.max(0, oldPrice - product.price);
+
+  const buildCartItem = (): CartItem => ({
+    productId: product.id,
+    productName: product.name,
+    variation: { color: selectedColor, size: selectedSize },
+    quantity,
+    price: product.price,
+    image: (product.colorImages && product.colorImages[selectedColor]) || product.images[0]
+  });
+
+  const handleAddToCart = () => {
+    onAddToCart(buildCartItem());
+    setIsJustAdded(true);
+    setTimeout(() => setIsJustAdded(false), 1400);
+  };
+
+  const handleBuyNow = () => {
+    const itemData = buildCartItem();
+    if (onBuyNow) {
+      onBuyNow(itemData);
+    } else {
+      onAddToCart(itemData);
+      onClose();
+    }
+  };
+
+  const provinceStockList = [
+    { label: 'no Cunene', qty: cuneneStock },
+    { label: 'na Huíla', qty: huilaStock }
+  ];
+
   return (
     <motion.div 
       key="product-modal-container"
@@ -1971,7 +2004,7 @@ const ProductModal = React.memo(({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 30, scale: 0.98 }}
         transition={{ type: "spring", stiffness: 380, damping: 30 }}
-        className="w-full max-w-[700px] h-full sm:h-[92vh] max-h-full sm:max-h-[92vh] bg-[#f5f7fb] sm:rounded-[32px] overflow-hidden relative z-10 pointer-events-auto shadow-2xl flex flex-col"
+        className="w-full max-w-[700px] h-full sm:h-[92vh] max-h-full sm:max-h-[92vh] bg-white sm:rounded-[32px] overflow-hidden relative z-10 pointer-events-auto shadow-2xl flex flex-col"
       >
         {/* =================================================
              GALERIA + CABEÇALHO (DO SCRIPT) - FIXA NO TOPO
@@ -2017,7 +2050,7 @@ const ProductModal = React.memo(({
           )}
 
           {/* FOTO DO PRODUTO TOCANDO AS DUAS EXTREMIDADES (ESQUERDA E DIREITA) */}
-          <div className="product-photo relative w-full h-full flex items-center justify-center overflow-hidden bg-gradient-to-br from-[#f8f9fb] to-[#edf1f7] p-0 m-0">
+          <div className="product-photo relative w-full h-full flex items-center justify-center overflow-hidden bg-white p-0 m-0">
             <SafeImage 
               src={product.images[currentImageIndex] || product.images[0]} 
               alt={product.name}
@@ -2097,74 +2130,71 @@ const ProductModal = React.memo(({
 
           {/* PREÇO */}
           <div className="price-area">
-            <span className="price" style={{ color: priceColor || '#062b5c' }}>
+            <span className="price" style={{ color: priceColor || '#ff6900' }}>
               KZ {product.price.toLocaleString('pt-AO')}
             </span>
             {hasDiscount && (
-              <span className="old-price">
-                KZ {Math.round(product.price / (1 - (discountPercentage / 100))).toLocaleString('pt-AO')}
-              </span>
+              <>
+                <span className="old-price">
+                  KZ {oldPrice.toLocaleString('pt-AO')}
+                </span>
+                <span className="pm-save">
+                  Poupas KZ {savedAmount.toLocaleString('pt-AO')}
+                </span>
+              </>
             )}
           </div>
 
-          {/* PAGAMENTO NA ENTREGA + ESTOQUE LOCAL */}
-          <div className="delivery-info bg-white border border-[#e5eaf0]">
-            <div className="delivery-icon">
-              💵
-            </div>
-            <div className="delivery-text flex-1">
-              <strong>Pagamento na entrega</strong>
-              <span>Pague quando receber o produto com total segurança.</span>
-              <div className="flex items-center gap-4 mt-2.5 flex-wrap">
-                <div className="flex items-center gap-1.5 text-xs sm:text-[13px] font-semibold text-zinc-700">
-                  <span className={cn("w-2 h-2 rounded-full shrink-0", huilaStock > 0 ? "bg-emerald-500 animate-pulse" : "bg-zinc-300")} />
-                  <span>Huíla: {huilaStock > 0 ? `${huilaStock} Em estoque` : <span className="text-zinc-400 font-normal">Esgotado</span>}</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs sm:text-[13px] font-semibold text-zinc-700">
-                  <span className={cn("w-2 h-2 rounded-full shrink-0", cuneneStock > 0 ? "bg-emerald-500 animate-pulse" : "bg-zinc-300")} />
-                  <span>Cunene: {cuneneStock > 0 ? `${cuneneStock} Em estoque` : <span className="text-zinc-400 font-normal">Esgotado</span>}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* TAB DETALHES VS COMENTÁRIOS */}
-          <div className="flex gap-6 border-b border-zinc-200 mt-6 mb-2">
+          {/* SEPARADORES: DESCRIÇÃO | AVALIAÇÕES */}
+          <div className="pm-tabs" role="tablist" aria-label="Informação do produto">
             <button
               type="button"
+              role="tab"
+              aria-selected={activeTab === 'details'}
               onClick={() => setActiveTab('details')}
-              className={cn(
-                "pb-2.5 text-xs sm:text-sm font-black uppercase tracking-wider transition-all relative cursor-pointer",
-                activeTab === 'details' ? "text-[#ff6900]" : "text-zinc-400 hover:text-zinc-600"
-              )}
+              className={cn("pm-tab", activeTab === 'details' && "active")}
             >
-              Detalhes do Produto
-              {activeTab === 'details' && <motion.div layoutId="productTabIndicator" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#ff6900]" />}
+              Descrição
             </button>
             <button
               type="button"
+              role="tab"
+              aria-selected={activeTab === 'comments'}
               onClick={() => setActiveTab('comments')}
-              className={cn(
-                "pb-2.5 text-xs sm:text-sm font-black uppercase tracking-wider transition-all relative flex items-center gap-1.5 cursor-pointer",
-                activeTab === 'comments' ? "text-[#ff6900]" : "text-zinc-400 hover:text-zinc-600"
-              )}
+              className={cn("pm-tab", activeTab === 'comments' && "active")}
             >
-              Avaliações & Opiniões
-              <span className="bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded-md text-[10px] font-bold">
-                {isLoadingFeedback ? '...' : comments.length}
-              </span>
-              {activeTab === 'comments' && <motion.div layoutId="productTabIndicator" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#ff6900]" />}
+              Avaliações
+              <span className="pm-tab-count">{isLoadingFeedback ? '...' : comments.length}</span>
             </button>
           </div>
 
           {activeTab === 'details' ? (
             <>
-              {/* DESCRIÇÃO */}
-              <section className="detail-section">
-                <h2 className="detail-title">Descrição</h2>
+              {/* DESCRIÇÃO + ESTOQUE POR PROVÍNCIA + PAGAMENTO NA ENTREGA */}
+              <section className="pm-info">
                 <p className="description">
                   {product.description || 'Produto de alta qualidade PDA Comercial, garantindo conforto, durabilidade e excelente acabamento para o seu dia a dia.'}
                 </p>
+
+                <ul className="pm-stock-list">
+                  {provinceStockList.map(item => (
+                    <li key={item.label} className={cn(item.qty <= 0 && "out")}>
+                      <span className="pm-check">
+                        {item.qty > 0 ? <Check className="w-3.5 h-3.5" strokeWidth={3.5} /> : <X className="w-3.5 h-3.5" strokeWidth={3.5} />}
+                      </span>
+                      <span>
+                        {item.qty > 0
+                          ? `${item.qty} ${item.qty === 1 ? 'unidade' : 'unidades'} ${item.label}`
+                          : `Esgotado ${item.label}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="pm-cod">
+                  <span>Clique em comprar e só pague na entrega!</span>
+                  <span aria-hidden="true">💰</span>
+                </div>
               </section>
 
               {/* TAMANHO */}
@@ -2244,113 +2274,48 @@ const ProductModal = React.memo(({
               )}
 
               {/* QUANTIDADE */}
-              <div className="quantity-area">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="quantity-label">Quantidade</span>
-                  {variationStock > 0 ? (
-                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
-                      {variationStock} un. em estoque {selectedProvince ? `na ${selectedProvince}` : ''}
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded-md">
-                      Esgotado {selectedProvince ? `na ${selectedProvince}` : ''}
-                    </span>
-                  )}
+              <section className="detail-section">
+                <div className="pm-qty-row">
+                  <div className="pm-qty-label">
+                    <span className="quantity-label">Quantidade</span>
+                    {variationStock > 0 ? (
+                      <span className="pm-stock-chip ok">
+                        {variationStock} un. em estoque {selectedProvince ? `na ${selectedProvince}` : ''}
+                      </span>
+                    ) : (
+                      <span className="pm-stock-chip out">
+                        Esgotado {selectedProvince ? `na ${selectedProvince}` : ''}
+                      </span>
+                    )}
+                  </div>
+                  <div className="quantity">
+                    <button
+                      type="button"
+                      id="minus"
+                      aria-label="Diminuir quantidade"
+                      disabled={quantity <= 1}
+                      onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                    >
+                      −
+                    </button>
+                    <span id="quantity">{quantity}</span>
+                    <button
+                      type="button"
+                      id="plus"
+                      aria-label="Aumentar quantidade"
+                      disabled={isOutOfStock || quantity >= variationStock}
+                      onClick={() => setQuantity(Math.min(Math.max(1, variationStock), quantity + 1))}
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
-                <div className="quantity">
-                  <button
-                    type="button"
-                    id="minus"
-                    disabled={quantity <= 1}
-                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  >
-                    −
-                  </button>
-                  <span id="quantity">{quantity}</span>
-                  <button
-                    type="button"
-                    id="plus"
-                    disabled={isOutOfStock || quantity >= variationStock}
-                    onClick={() => setQuantity(Math.min(Math.max(1, variationStock), quantity + 1))}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              {/* SUB-TOTAL */}
-              <div className="flex items-center justify-between mt-5 pt-4 border-t border-[#e5eaf0]">
-                <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Subtotal:</span>
-                <span className="text-lg font-black text-[#062b5c]">
-                  KZ {(product.price * quantity).toLocaleString('pt-AO')}
-                </span>
-              </div>
+              </section>
 
               {isOutOfStock && (
                 <div className="mt-3 p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold text-center">
                   ⚠️ Esta variação está esgotada no momento. Experimente selecionar outra cor ou tamanho.
                 </div>
-              )}
-
-              {/* BOTÕES DE COMPRA (DO SCRIPT) */}
-              {isOutOfStock && (
-                <button
-                  type="button"
-                  onClick={() => openOrderOnWhatsApp(whatsappNumber, product, { color: selectedColor, size: selectedSize, province: selectedProvince })}
-                  className="w-full min-h-[52px] mt-3 rounded-2xl bg-[#ff6900] text-white font-extrabold text-base shadow-md active:scale-95 transition-all cursor-pointer"
-                >
-                  📦 Encomendar
-                </button>
-              )}
-
-              {!isOutOfStock && (
-              <div className="buy-area">
-                <button
-                  type="button"
-                  className="add-cart"
-                  id="addCart"
-                  disabled={isOutOfStock}
-                  onClick={() => {
-                    onAddToCart({
-                      productId: product.id,
-                      productName: product.name,
-                      variation: { color: selectedColor, size: selectedSize },
-                      quantity,
-                      price: product.price,
-                      image: (product.colorImages && product.colorImages[selectedColor]) || product.images[0]
-                    });
-                    setIsJustAdded(true);
-                    setTimeout(() => setIsJustAdded(false), 1400);
-                  }}
-                >
-                  {isJustAdded ? '✓ Adicionado ao Carrinho' : '🛒 Adicionar ao Carrinho'}
-                </button>
-
-                <button
-                  type="button"
-                  className="buy-now"
-                  id="buyNow"
-                  disabled={isOutOfStock}
-                  onClick={() => {
-                    const itemData: CartItem = {
-                      productId: product.id,
-                      productName: product.name,
-                      variation: { color: selectedColor, size: selectedSize },
-                      quantity,
-                      price: product.price,
-                      image: (product.colorImages && product.colorImages[selectedColor]) || product.images[0]
-                    };
-                    if (onBuyNow) {
-                      onBuyNow(itemData);
-                    } else {
-                      onAddToCart(itemData);
-                      onClose();
-                    }
-                  }}
-                >
-                  Comprar agora
-                </button>
-              </div>
               )}
 
               {/* SUPORTE POR LIGAÇÃO */}
@@ -2466,6 +2431,47 @@ const ProductModal = React.memo(({
             </div>
           )}
         </main>
+
+        {/* BARRA FIXA: SUBTOTAL + CARRINHO + COMPRAR */}
+        {activeTab === 'details' && (
+          <footer className="pm-footer">
+            <div className="pm-subtotal">
+              <span>Subtotal:</span>
+              <strong>KZ {(product.price * quantity).toLocaleString('pt-AO')}</strong>
+            </div>
+            <div className="pm-actions">
+              {isOutOfStock ? (
+                <button
+                  type="button"
+                  className="pm-buy"
+                  onClick={() => openOrderOnWhatsApp(whatsappNumber, product, { color: selectedColor, size: selectedSize, province: selectedProvince })}
+                >
+                  📦 Encomendar
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="pm-cart"
+                    id="addCart"
+                    aria-label={isJustAdded ? 'Adicionado ao carrinho' : 'Adicionar ao carrinho'}
+                    onClick={handleAddToCart}
+                  >
+                    {isJustAdded ? <Check className="w-6 h-6" strokeWidth={3} /> : <ShoppingCart className="w-6 h-6" />}
+                  </button>
+                  <button
+                    type="button"
+                    className="pm-buy"
+                    id="buyNow"
+                    onClick={handleBuyNow}
+                  >
+                    Comprar
+                  </button>
+                </>
+              )}
+            </div>
+          </footer>
+        )}
       </motion.div>
     </motion.div>
   );
