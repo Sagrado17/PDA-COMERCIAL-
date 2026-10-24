@@ -269,7 +269,7 @@ export const ProductModal = React.memo(({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 30, scale: 0.98 }}
         transition={{ type: "spring", stiffness: 380, damping: 30 }}
-        className="w-full max-w-[700px] h-full sm:h-[92vh] max-h-full sm:max-h-[92vh] bg-white sm:rounded-[32px] overflow-hidden relative z-10 pointer-events-auto shadow-2xl flex flex-col"
+        className="pm-desktop-wrap w-full max-w-[700px] h-full sm:h-[92vh] max-h-full sm:max-h-[92vh] bg-white sm:rounded-[32px] overflow-hidden relative z-10 pointer-events-auto shadow-2xl flex flex-col"
       >
         {/* =================================================
              GALERIA + CABEÇALHO (DO SCRIPT) - FIXA NO TOPO
