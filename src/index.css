@@ -1537,3 +1537,45 @@
   outline: 3px solid #ff6900;
   outline-offset: 2px;
 }
+
+
+/* =====================================================
+   JANELA DE PRODUTO — DESKTOP
+   >=1024px: foto à esquerda; detalhes/avaliações e barra
+   de compra à direita. 640-1023px: foto mais baixa para
+   deixar espaço aos detalhes.
+===================================================== */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .pm-desktop-wrap .product-gallery {
+    height: min(400px, 40vh) !important;
+    min-height: 240px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .pm-desktop-wrap {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+    max-width: 1000px !important;
+  }
+  .pm-desktop-wrap .product-gallery {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    height: 100% !important;
+    min-height: 0;
+    position: relative;
+  }
+  .pm-desktop-wrap .product-content {
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 0;
+    border-radius: 0;
+    margin-top: 0;
+  }
+  .pm-desktop-wrap .pm-footer {
+    grid-column: 2;
+    grid-row: 2;
+    border-radius: 0;
+  }
+}

@@ -1372,12 +1372,12 @@ export default function App() {
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
                   {filteredProducts.map((product, idx) => {
                     // Mobile (2 colunas): Exibição ÚNICA após as 3 primeiras filas (após 6 produtos)
                     const isMobileTrigger = idx === 5 || (filteredProducts.length < 6 && idx === filteredProducts.length - 1);
-                    // PC (3 colunas): Exibição ÚNICA após as 3 primeiras filas (após 9 produtos)
-                    const isPcTrigger = idx === 8 || (filteredProducts.length < 9 && idx === filteredProducts.length - 1);
+                    // PC (3 ou 4 colunas): Exibição ÚNICA após 12 produtos (fecha filas completas em 3 e em 4 colunas)
+                    const isPcTrigger = idx === 11 || (filteredProducts.length < 12 && idx === filteredProducts.length - 1);
 
                     return (
                       <React.Fragment key={product.id}>
@@ -1405,7 +1405,7 @@ export default function App() {
                             />
                           </div>
                         )}
-                        {/* Modo PC: Exibição única após as 3 filas de 3 abaixo */}
+                        {/* Modo PC: Exibição única após os 12 primeiros produtos */}
                         {isPcTrigger && recentTop10.length > 0 && (
                           <div className="col-span-full hidden sm:block">
                             <RecentTop10Rail 
